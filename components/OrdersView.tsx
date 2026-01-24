@@ -36,19 +36,21 @@ export function OrdersView({ orders, onCancel }: OrdersViewProps) {
   }
 
   function getStatusColor(status: OrderStatus): string {
+    const base = "bg-black text-white dark:bg-black dark:text-white";
+
     switch (status) {
       case "Live":
-        return "border-yellow-600 bg-yellow-600 text-white dark:border-yellow-400 dark:bg-yellow-600 dark:text-white";
+        return `${base} border-yellow-600 dark:border-yellow-400`;
       case "Filled":
-        return "border-green-600 bg-green-600 text-white dark:border-green-400 dark:bg-green-600 dark:text-white";
+        return `${base} border-green-600 dark:border-green-400`;
       case "Completed":
-        return "border-blue-600 bg-blue-600 text-white dark:border-blue-400 dark:bg-blue-600 dark:text-white";
+        return `${base} border-blue-600 dark:border-blue-400`;
       case "Expired":
-        return "border-gray-600 bg-gray-600 text-white dark:border-gray-400 dark:bg-gray-600 dark:text-white";
+        return `${base} border-gray-600 dark:border-gray-400`;
       case "In-Draft":
-        return "border-purple-600 bg-purple-600 text-white dark:border-purple-400 dark:bg-purple-600 dark:text-white";
+        return `${base} border-purple-600 dark:border-purple-400`;
       default:
-        return "border-gray-600 bg-gray-600 text-white dark:border-gray-400 dark:bg-gray-600 dark:text-white";
+        return `${base} border-gray-600 dark:border-gray-400`;
     }
   }
 
