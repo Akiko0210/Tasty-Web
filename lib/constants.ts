@@ -1,0 +1,69 @@
+import type { StrategyConfig } from "./types";
+
+export const strategyConfigs: StrategyConfig[] = [
+  {
+    name: "Vertical",
+    defaultLegs: [
+      { strike: 687, type: "Call", expiration: "Feb 6", side: "Long", size: 1, price: 7.77 },
+      { strike: 691, type: "Call", expiration: "Feb 6", side: "Short", size: 1, price: 6.27 },
+    ],
+  },
+  {
+    name: "Butterfly",
+    defaultLegs: [
+      { strike: 687, type: "Call", expiration: "Feb 6", side: "Short", size: 1, price: 7.77 },
+      { strike: 689, type: "Call", expiration: "Feb 6", side: "Long", size: 2, price: 7.44 },
+      { strike: 691, type: "Call", expiration: "Feb 6", side: "Short", size: 1, price: 6.27 },
+    ],
+  },
+  {
+    name: "Condor",
+    defaultLegs: [
+      { strike: 685, type: "Call", expiration: "Feb 6", side: "Long", size: 1, price: 8.5 },
+      { strike: 687, type: "Call", expiration: "Feb 6", side: "Short", size: 1, price: 7.77 },
+      { strike: 691, type: "Call", expiration: "Feb 6", side: "Short", size: 1, price: 6.27 },
+      { strike: 693, type: "Call", expiration: "Feb 6", side: "Long", size: 1, price: 5.1 },
+    ],
+  },
+  {
+    name: "Calendar",
+    defaultLegs: [
+      { strike: 689, type: "Call", expiration: "Mar 6", side: "Long", size: 1, price: 9.2 },
+      { strike: 689, type: "Call", expiration: "Feb 6", side: "Short", size: 1, price: 7.44 },
+    ],
+  },
+  {
+    name: "Iron Condor",
+    defaultLegs: [
+      { strike: 683, type: "Put", expiration: "Feb 6", side: "Long", size: 1, price: 4.2 },
+      { strike: 685, type: "Put", expiration: "Feb 6", side: "Short", size: 1, price: 5.1 },
+      { strike: 693, type: "Call", expiration: "Feb 6", side: "Short", size: 1, price: 5.0 },
+      { strike: 695, type: "Call", expiration: "Feb 6", side: "Long", size: 1, price: 4.0 },
+    ],
+  },
+  {
+    name: "Iron Butterfly",
+    defaultLegs: [
+      { strike: 685, type: "Put", expiration: "Feb 6", side: "Long", size: 1, price: 5.1 },
+      { strike: 689, type: "Put", expiration: "Feb 6", side: "Short", size: 1, price: 6.5 },
+      { strike: 689, type: "Call", expiration: "Feb 6", side: "Short", size: 1, price: 6.2 },
+      { strike: 693, type: "Call", expiration: "Feb 6", side: "Long", size: 1, price: 5.0 },
+    ],
+  },
+  {
+    name: "Diagonal",
+    defaultLegs: [
+      { strike: 687, type: "Call", expiration: "Mar 6", side: "Long", size: 1, price: 8.9 },
+      { strike: 691, type: "Call", expiration: "Feb 6", side: "Short", size: 1, price: 6.27 },
+    ],
+  },
+  {
+    name: "Double Diagonal",
+    defaultLegs: [
+      { strike: 683, type: "Put", expiration: "Mar 6", side: "Long", size: 1, price: 5.0 },
+      { strike: 685, type: "Put", expiration: "Feb 6", side: "Short", size: 1, price: 5.1 },
+      { strike: 693, type: "Call", expiration: "Feb 6", side: "Short", size: 1, price: 5.0 },
+      { strike: 695, type: "Call", expiration: "Mar 6", side: "Long", size: 1, price: 4.5 },
+    ],
+  },
+];

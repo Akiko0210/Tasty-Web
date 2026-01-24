@@ -1,0 +1,9 @@
+- scalable
+Features: 
+Buy and sell different option positions 
+Common positions: Vertical Butterfly condor, calendar, iron condor, iron butterfly, diagonal, double diagonal
+Expiration date, strike pcires, legs -> look from cheatsheet. 
+Start with Vertiacl, butterfly and condor.
+Basic single option/leg (not spread)
+
+All freebies: balance etc...
