@@ -10,6 +10,7 @@ interface StrategyPanelProps {
   selected: number | null;
   legs: Leg[];
   currentPrice: number;
+  totalCost: number;
   dropdownOpen: boolean;
   onDropdownToggle: () => void;
   onSelectStrategy: (idx: number) => void;
@@ -24,6 +25,7 @@ export function StrategyPanel({
   selected,
   legs,
   currentPrice,
+  totalCost,
   dropdownOpen,
   onDropdownToggle,
   onSelectStrategy,
@@ -47,8 +49,10 @@ export function StrategyPanel({
               onSelect={onSelectStrategy}
             />
             <div className="flex items-center gap-2 border-l-2 border-black pl-4 dark:border-white">
-              <span className="text-xs font-medium opacity-80">Current Price:</span>
-              <span className="text-sm font-bold">{currentPrice.toFixed(2)}</span>
+              <span className="text-xs font-medium opacity-80">SPX Price:</span>
+              <span className="text-sm font-bold">
+                {currentPrice.toFixed(2)}
+              </span>
             </div>
           </div>
         </header>
@@ -64,7 +68,12 @@ export function StrategyPanel({
                 <th className="px-4 py-3">
                   <span className="inline-flex items-center gap-1">
                     Size
-                    <span className="cursor-help opacity-70" title="Number of contracts">ⓘ</span>
+                    <span
+                      className="cursor-help opacity-70"
+                      title="Number of contracts"
+                    >
+                      ⓘ
+                    </span>
                   </span>
                 </th>
                 <th className="px-4 py-3">Price</th>
@@ -85,21 +94,35 @@ export function StrategyPanel({
         </div>
 
         <footer className="border-t-2 border-black px-4 py-3 dark:border-white">
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={onAddPosition}
-              className="rounded-lg border-2 border-dashed border-black px-4 py-2 text-sm font-bold transition hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black"
-            >
-              + New position
-            </button>
-            <button
-              type="button"
-              onClick={onAddOrder}
-              className="rounded-lg border-2 border-black bg-black px-6 py-2 text-sm font-bold text-white transition hover:bg-black/80 dark:border-white dark:bg-white dark:text-black dark:hover:bg-white/80"
-            >
-              Add Order
-            </button>
+          <div className="flex items-center justify-between">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={onAddPosition}
+                className="rounded-lg border-2 border-dashed border-black px-4 py-2 text-sm font-bold transition hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black"
+              >
+                + New position
+              </button>
+              <button
+                type="button"
+                onClick={onAddOrder}
+                className="rounded-lg border-2 border-black bg-black px-6 py-2 text-sm font-bold text-white transition hover:bg-black/80 dark:border-white dark:bg-white dark:text-black dark:hover:bg-white/80"
+              >
+                Add Order
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium opacity-80">Total:</span>
+              <span
+                className={`text-lg font-bold ${
+                  totalCost >= 0
+                    ? "text-green-600 dark:text-green-400"
+                    : "text-red-600 dark:text-red-400"
+                }`}
+              >
+                {totalCost >= 0 ? "+" : ""}${totalCost.toFixed(2)}
+              </span>
+            </div>
           </div>
         </footer>
       </div>

@@ -7,4 +7,3 @@ export default function OrdersPage() {
   const { orders, cancelOrder } = useApp();
   return <OrdersView orders={orders} onCancel={cancelOrder} />;
 }
-

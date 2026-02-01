@@ -30,6 +30,12 @@ export function OrdersView({ orders, onCancel }: OrdersViewProps) {
       ? orders
       : orders.filter((order) => order.status === filter);
 
+  const totalCost = filteredOrders.reduce((sum, o) => sum + o.totalCost, 0);
+  const totalProfitLoss = filteredOrders.reduce(
+    (sum, o) => sum + (o.profitLoss ?? 0),
+    0
+  );
+
   function getOrderCount(status: OrderStatus | "All"): number {
     if (status === "All") return orders.length;
     return orders.filter((order) => order.status === status).length;
@@ -174,6 +180,30 @@ export function OrdersView({ orders, onCancel }: OrdersViewProps) {
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-black bg-gray-100 font-bold dark:border-white dark:bg-gray-900">
+                    <td className="px-4 py-3">Total</td>
+                    <td className="px-4 py-3" />
+                    <td className="px-4 py-3">${totalCost.toFixed(2)}</td>
+                    <td className="px-4 py-3" />
+                    {orders.some((o) => isConcluded(o.status)) && (
+                      <td className="px-4 py-3">
+                        <span
+                          className={
+                            totalProfitLoss >= 0
+                              ? "text-green-600 dark:text-green-400"
+                              : "text-red-600 dark:text-red-400"
+                          }
+                        >
+                          {totalProfitLoss >= 0 ? "+" : ""}$
+                          {totalProfitLoss.toFixed(2)}
+                        </span>
+                      </td>
+                    )}
+                    <td className="px-4 py-3" />
+                    <td className="px-4 py-3" />
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>

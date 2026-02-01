@@ -8,12 +8,16 @@ import { useApp } from "@/contexts/AppContext";
 import { StrategyPanel } from "@/components/StrategyPanel";
 
 export default function Home() {
-  const { balance, setBalance, orders, setOrders, selected, setSelected } = useApp();
-  const [legsByStrategy, setLegsByStrategy] = useState<Record<number, Leg[]>>({});
+  const { balance, setBalance, orders, setOrders, selected, setSelected } =
+    useApp();
+  const [legsByStrategy, setLegsByStrategy] = useState<Record<number, Leg[]>>(
+    {},
+  );
   const [currentPrice] = useState<number>(689);
   const [dropdownOpen, setDropdownOpen] = useState<boolean>(false);
 
-  const legs = selected !== null ? legsByStrategy[selected] ?? [] : [];
+  const legs = selected !== null ? (legsByStrategy[selected] ?? []) : [];
+  const totalCost = calculateTotalCost(legs);
 
   useEffect(() => {
     if (selected !== null) {
@@ -25,12 +29,18 @@ export default function Home() {
     }
   }, [selected]);
 
-  function updateLeg(strategyIdx: number, legId: string, updates: Partial<Leg>) {
+  function updateLeg(
+    strategyIdx: number,
+    legId: string,
+    updates: Partial<Leg>,
+  ) {
     setLegsByStrategy((prev) => {
       const list = prev[strategyIdx] ?? [];
       return {
         ...prev,
-        [strategyIdx]: list.map((l) => (l.id === legId ? { ...l, ...updates } : l)),
+        [strategyIdx]: list.map((l) =>
+          l.id === legId ? { ...l, ...updates } : l,
+        ),
       };
     });
   }
@@ -46,8 +56,19 @@ export default function Home() {
     const list = legsByStrategy[strategyIdx] ?? [];
     const last = list[list.length - 1];
     const base = last
-      ? { ...last, strike: last.strike + 2, price: Math.max(0.5, last.price - 0.5) }
-      : { strike: 689, type: "Call" as OptionType, expiration: "Feb 6", side: "Long" as Side, size: 1, price: 7.0 };
+      ? {
+          ...last,
+          strike: last.strike + 2,
+          price: Math.max(0.5, last.price - 0.5),
+        }
+      : {
+          strike: 689,
+          type: "Call" as OptionType,
+          expiration: "Feb 6",
+          side: "Long" as Side,
+          size: 1,
+          price: 7.0,
+        };
     const newLeg: Leg = {
       ...base,
       id: `leg-${Math.random().toString(36).substring(2, 9)}-${list.length}`,
@@ -61,7 +82,6 @@ export default function Home() {
 
   function addOrder() {
     if (selected === null || legs.length === 0) return;
-    const totalCost = calculateTotalCost(legs);
     if (balance + totalCost < 0) {
       alert("Insufficient balance");
       return;
@@ -87,10 +107,13 @@ export default function Home() {
             selected={selected}
             legs={legs}
             currentPrice={currentPrice}
+            totalCost={totalCost}
             dropdownOpen={dropdownOpen}
             onDropdownToggle={() => setDropdownOpen(!dropdownOpen)}
             onSelectStrategy={setSelected}
-            onUpdateLeg={(legId, updates) => updateLeg(selected, legId, updates)}
+            onUpdateLeg={(legId, updates) =>
+              updateLeg(selected, legId, updates)
+            }
             onRemoveLeg={(legId) => removeLeg(selected, legId)}
             onAddPosition={() => addPosition(selected)}
             onAddOrder={addOrder}

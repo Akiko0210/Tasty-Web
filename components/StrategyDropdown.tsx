@@ -10,7 +10,13 @@ interface StrategyDropdownProps {
   onSelect: (idx: number) => void;
 }
 
-export function StrategyDropdown({ strategies, selected, isOpen, onToggle, onSelect }: StrategyDropdownProps) {
+export function StrategyDropdown({
+  strategies,
+  selected,
+  isOpen,
+  onToggle,
+  onSelect,
+}: StrategyDropdownProps) {
   const strategyName = selected !== null ? strategies[selected].name : null;
 
   return (
@@ -25,10 +31,7 @@ export function StrategyDropdown({ strategies, selected, isOpen, onToggle, onSel
       </button>
       {isOpen && (
         <>
-          <div
-            className="fixed inset-0 z-10"
-            onClick={onToggle}
-          />
+          <div className="fixed inset-0 z-10" onClick={onToggle} />
           <div className="absolute left-0 top-full z-20 mt-1 w-48 rounded border-2 border-black bg-white shadow-lg dark:border-white dark:bg-black">
             {strategies.map((cfg, idx) => (
               <button
