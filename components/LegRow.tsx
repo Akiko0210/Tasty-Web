@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import type { Leg } from "@/lib/types";
 import { availableStrikes } from "@/lib/constants";
 import { TrashIcon } from "./Icons";
@@ -20,18 +20,17 @@ function StrikeDropdown({
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
 
   const currentIdx = availableStrikes.indexOf(value);
-  const showAbove = 6;
-  const showBelow = 6;
-  const startIdx = Math.max(0, currentIdx - showAbove);
-  const endIdx = Math.min(availableStrikes.length, currentIdx + showBelow + 1);
-  const visibleStrikes = availableStrikes.slice(startIdx, endIdx);
-  const itemsAbove = currentIdx - startIdx;
   const itemHeight = 32;
-  const topOffset = -(itemsAbove * itemHeight);
+  const visibleCount = 9;
+  const maxHeight = visibleCount * itemHeight;
+  const positionInView = Math.min(currentIdx, 4);
+  const topOffset = -positionInView * itemHeight;
 
   useEffect(() => {
+    if (!open) return;
     function handleClickOutside(e: MouseEvent) {
       if (
         containerRef.current &&
@@ -40,11 +39,16 @@ function StrikeDropdown({
         setOpen(false);
       }
     }
-    if (open) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
+    document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
+
+  useLayoutEffect(() => {
+    if (open && listRef.current) {
+      const scrollTop = Math.max(0, (currentIdx - 4) * itemHeight);
+      listRef.current.scrollTop = scrollTop;
+    }
+  }, [open, currentIdx, itemHeight]);
 
   return (
     <div ref={containerRef} className="relative">
@@ -57,10 +61,11 @@ function StrikeDropdown({
       </button>
       {open && (
         <ul
-          style={{ top: topOffset }}
-          className="absolute left-0 z-50 w-20 rounded-lg border-2 border-blue-500 bg-white shadow-xl ring-2 ring-blue-500/20 dark:border-blue-400 dark:bg-black dark:ring-blue-400/20"
+          ref={listRef}
+          style={{ maxHeight, top: topOffset }}
+          className="absolute left-0 z-50 w-20 overflow-y-auto rounded-lg border-2 border-blue-500 bg-white shadow-xl ring-2 ring-blue-500/20 dark:border-blue-400 dark:bg-black dark:ring-blue-400/20"
         >
-          {visibleStrikes.map((strike) => (
+          {availableStrikes.map((strike) => (
             <li key={strike}>
               <button
                 type="button"
@@ -68,10 +73,10 @@ function StrikeDropdown({
                   onChange(strike);
                   setOpen(false);
                 }}
-                className={`w-full px-2 py-1.5 text-sm text-left hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black ${
+                className={`w-full px-2 py-1.5 text-sm text-left ${
                   strike === value
-                    ? "bg-black text-white dark:bg-white dark:text-black"
-                    : ""
+                    ? "bg-blue-500 text-white dark:bg-blue-400 dark:text-black"
+                    : "hover:bg-gray-200 dark:hover:bg-gray-700"
                 }`}
               >
                 {strike}

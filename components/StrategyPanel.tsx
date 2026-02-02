@@ -1,39 +1,102 @@
 "use client";
 
-import type { Leg } from "@/lib/types";
+import { useState, useEffect } from "react";
+import type { Leg, Order, OptionType, Side } from "@/lib/types";
+import { strategyConfigs } from "@/lib/constants";
+import { toLegs, calculateTotalCost } from "@/lib/utils";
+import { useApp } from "@/contexts/AppContext";
 import { StrategyDropdown } from "./StrategyDropdown";
 import { LegRow } from "./LegRow";
-import type { StrategyConfig } from "@/lib/types";
 
-interface StrategyPanelProps {
-  strategies: StrategyConfig[];
-  selected: number | null;
-  legs: Leg[];
-  currentPrice: number;
-  totalCost: number;
-  dropdownOpen: boolean;
-  onDropdownToggle: () => void;
-  onSelectStrategy: (idx: number) => void;
-  onUpdateLeg: (legId: string, updates: Partial<Leg>) => void;
-  onRemoveLeg: (legId: string) => void;
-  onAddPosition: () => void;
-  onAddOrder: () => void;
-}
+export function StrategyPanel() {
+  const { balance, setBalance, setOrders, selected, setSelected } = useApp();
+  const [legsByStrategy, setLegsByStrategy] = useState<Record<number, Leg[]>>(
+    {},
+  );
+  const [currentPrice] = useState<number>(689);
+  const [dropdownOpen, setDropdownOpen] = useState<boolean>(false);
 
-export function StrategyPanel({
-  strategies,
-  selected,
-  legs,
-  currentPrice,
-  totalCost,
-  dropdownOpen,
-  onDropdownToggle,
-  onSelectStrategy,
-  onUpdateLeg,
-  onRemoveLeg,
-  onAddPosition,
-  onAddOrder,
-}: StrategyPanelProps) {
+  const legs = selected !== null ? (legsByStrategy[selected] ?? []) : [];
+  const totalCost = calculateTotalCost(legs);
+
+  useEffect(() => {
+    if (selected !== null) {
+      setLegsByStrategy((prev) => {
+        if (prev[selected]) return prev;
+        const newLegs = toLegs(strategyConfigs[selected].defaultLegs);
+        return { ...prev, [selected]: newLegs };
+      });
+    }
+  }, [selected]);
+
+  function updateLeg(legId: string, updates: Partial<Leg>) {
+    if (selected === null) return;
+    setLegsByStrategy((prev) => {
+      const list = prev[selected] ?? [];
+      return {
+        ...prev,
+        [selected]: list.map((l) =>
+          l.id === legId ? { ...l, ...updates } : l,
+        ),
+      };
+    });
+  }
+
+  function removeLeg(legId: string) {
+    if (selected === null) return;
+    setLegsByStrategy((prev) => {
+      const list = (prev[selected] ?? []).filter((l) => l.id !== legId);
+      return { ...prev, [selected]: list };
+    });
+  }
+
+  function addPosition() {
+    if (selected === null) return;
+    const list = legsByStrategy[selected] ?? [];
+    const last = list[list.length - 1];
+    const base = last
+      ? {
+          ...last,
+          strike: last.strike + 2,
+          price: Math.max(0.5, last.price - 0.5),
+        }
+      : {
+          strike: 689,
+          type: "Call" as OptionType,
+          expiration: "Feb 6",
+          side: "Long" as Side,
+          size: 1,
+          price: 7.0,
+        };
+    const newLeg: Leg = {
+      ...base,
+      id: `leg-${Math.random().toString(36).substring(2, 9)}-${list.length}`,
+      visible: true,
+    };
+    setLegsByStrategy((prev) => ({
+      ...prev,
+      [selected]: [...(prev[selected] ?? []), newLeg],
+    }));
+  }
+
+  function addOrder() {
+    if (selected === null || legs.length === 0) return;
+    if (balance + totalCost < 0) {
+      alert("Insufficient balance");
+      return;
+    }
+    const newOrder: Order = {
+      id: `order-${Math.random().toString(36).substring(2, 9)}-${Date.now()}`,
+      strategyName: strategyConfigs[selected].name,
+      legs: legs.map((l) => ({ ...l })),
+      status: "Live",
+      createdAt: new Date(),
+      totalCost,
+    };
+    setOrders((prev) => [newOrder, ...prev]);
+    setBalance((prev: number) => prev + totalCost);
+  }
+
   if (selected === null) return null;
 
   return (
@@ -42,11 +105,11 @@ export function StrategyPanel({
         <header className="flex items-center justify-between border-b-2 border-black px-4 py-3 dark:border-white">
           <div className="flex items-center gap-4">
             <StrategyDropdown
-              strategies={strategies}
+              strategies={strategyConfigs}
               selected={selected}
               isOpen={dropdownOpen}
-              onToggle={onDropdownToggle}
-              onSelect={onSelectStrategy}
+              onToggle={() => setDropdownOpen(!dropdownOpen)}
+              onSelect={setSelected}
             />
             <div className="flex items-center gap-2 border-l-2 border-black pl-4 dark:border-white">
               <span className="text-xs font-medium opacity-80">SPX Price:</span>
@@ -57,7 +120,7 @@ export function StrategyPanel({
           </div>
         </header>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-visible">
           <table className="w-full">
             <thead>
               <tr className="border-b-2 border-black text-left text-xs font-bold uppercase tracking-wider dark:border-white">
@@ -85,8 +148,8 @@ export function StrategyPanel({
                 <LegRow
                   key={leg.id}
                   leg={leg}
-                  onUpdate={(updates) => onUpdateLeg(leg.id, updates)}
-                  onRemove={() => onRemoveLeg(leg.id)}
+                  onUpdate={(updates) => updateLeg(leg.id, updates)}
+                  onRemove={() => removeLeg(leg.id)}
                 />
               ))}
             </tbody>
@@ -98,14 +161,14 @@ export function StrategyPanel({
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={onAddPosition}
+                onClick={addPosition}
                 className="rounded-lg border-2 border-dashed border-black px-4 py-2 text-sm font-bold transition hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black"
               >
                 + New position
               </button>
               <button
                 type="button"
-                onClick={onAddOrder}
+                onClick={addOrder}
                 className="rounded-lg border-2 border-black bg-black px-6 py-2 text-sm font-bold text-white transition hover:bg-black/80 dark:border-white dark:bg-white dark:text-black dark:hover:bg-white/80"
               >
                 Add Order

@@ -1,6 +1,5 @@
 import { strategyConfigs } from "@/lib/constants";
 import { Sidebar } from "./Sidebar";
-import { useApp } from "@/contexts/AppContext";
 
 export function LayoutContent({ children }: { children: React.ReactNode }) {
   return (
