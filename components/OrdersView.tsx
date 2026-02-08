@@ -1,70 +1,84 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { Order, OrderStatus } from "@/lib/types";
+import type { Order, LegStatus } from "@/lib/types";
 
 interface OrdersViewProps {
   orders: Order[];
   onCancel: (orderId: string) => void;
 }
 
+function orderHasLegWithStatus(order: Order, status: LegStatus): boolean {
+  return order.legs.some((l) => l.status === status);
+}
+
+function orderIsFullyConcluded(order: Order): boolean {
+  return order.legs.every((l) =>
+    ["Filled", "Expired", "Canceled", "Rejected"].includes(l.status),
+  );
+}
+
+function orderHasCancelableLeg(order: Order): boolean {
+  return order.legs.some(
+    (l) => l.status === "Working" || l.status === "Partially filled",
+  );
+}
+
 export function OrdersView({ orders, onCancel }: OrdersViewProps) {
-  const [filter, setFilter] = useState<OrderStatus | "All">("All");
+  const [filter, setFilter] = useState<LegStatus | "All">("All");
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const statuses: (OrderStatus | "All")[] = [
+  const statuses: (LegStatus | "All")[] = [
     "All",
-    "Live",
+    "Working",
+    "Partially filled",
     "Filled",
-    "Completed",
+    "Canceled",
+    "Rejected",
     "Expired",
-    "In-Draft",
   ];
 
   const filteredOrders =
     filter === "All"
       ? orders
-      : orders.filter((order) => order.status === filter);
+      : orders.filter((o) => orderHasLegWithStatus(o, filter));
 
   const totalCost = filteredOrders.reduce((sum, o) => sum + o.totalCost, 0);
   const totalProfitLoss = filteredOrders.reduce(
     (sum, o) => sum + (o.profitLoss ?? 0),
-    0
+    0,
   );
 
-  function getOrderCount(status: OrderStatus | "All"): number {
+  function getOrderCount(status: LegStatus | "All"): number {
     if (status === "All") return orders.length;
-    return orders.filter((order) => order.status === status).length;
+    return orders.filter((o) => orderHasLegWithStatus(o, status)).length;
   }
 
-  function getStatusColor(status: OrderStatus): string {
+  function getStatusColor(status: LegStatus): string {
     const base = "bg-black text-white dark:bg-black dark:text-white";
-
     switch (status) {
-      case "Live":
+      case "Working":
         return `${base} border-yellow-600 dark:border-yellow-400`;
+      case "Partially filled":
+        return `${base} border-blue-600 dark:border-blue-400`;
       case "Filled":
         return `${base} border-green-600 dark:border-green-400`;
-      case "Completed":
-        return `${base} border-blue-600 dark:border-blue-400`;
-      case "Expired":
+      case "Canceled":
         return `${base} border-gray-600 dark:border-gray-400`;
-      case "In-Draft":
-        return `${base} border-purple-600 dark:border-purple-400`;
+      case "Rejected":
+        return `${base} border-red-600 dark:border-red-400`;
+      case "Expired":
+        return `${base} border-gray-500 dark:border-gray-500`;
       default:
         return `${base} border-gray-600 dark:border-gray-400`;
     }
   }
 
-  function isConcluded(status: OrderStatus): boolean {
-    return (
-      status === "Filled" || status === "Completed" || status === "Expired"
-    );
-  }
+  const showProfitLoss = orders.some(orderIsFullyConcluded);
 
   return (
     <div className="flex flex-1 flex-col overflow-auto bg-white p-6 dark:bg-black">
@@ -100,9 +114,9 @@ export function OrdersView({ orders, onCancel }: OrdersViewProps) {
                   <tr className="border-b-2 border-black text-left text-xs font-bold uppercase tracking-wider dark:border-white">
                     <th className="px-4 py-3">Strategy</th>
                     <th className="px-4 py-3">Legs</th>
-                    <th className="px-4 py-3">Total Cost</th>
                     <th className="px-4 py-3">Status</th>
-                    {orders.some((o) => isConcluded(o.status)) && (
+                    <th className="px-4 py-3">Total Cost</th>
+                    {showProfitLoss && (
                       <th className="px-4 py-3">Profit/Loss</th>
                     )}
                     <th className="px-4 py-3">Created</th>
@@ -119,27 +133,31 @@ export function OrdersView({ orders, onCancel }: OrdersViewProps) {
                         {order.strategyName}
                       </td>
                       <td className="px-4 py-2 text-sm">
-                        {order.legs.map((leg, i) => (
-                          <div key={i} className="text-xs">
-                            {leg.side} {leg.size}x {leg.type} {leg.strike} @{" "}
-                            {leg.price}
+                        {order.legs.map((leg) => (
+                          <div key={leg.id} className="text-xs">
+                            {leg.side === "Long" ? "+" : "-"}
+                            {leg.size} {leg.type} {leg.strike} @ {leg.price}
                           </div>
                         ))}
+                      </td>
+                      <td className="px-4 py-2">
+                        <div className="flex flex-col gap-1">
+                          {order.legs.map((leg) => (
+                            <span
+                              key={leg.id}
+                              className={`inline-block w-fit rounded border-2 px-2 py-0.5 text-xs font-bold ${getStatusColor(leg.status)}`}
+                            >
+                              {leg.status}
+                            </span>
+                          ))}
+                        </div>
                       </td>
                       <td className="px-4 py-2 font-bold">
                         ${order.totalCost.toFixed(2)}
                       </td>
-                      <td className="px-4 py-2">
-                        <span
-                          className={`rounded border-2 px-2 py-1 text-xs font-bold ${getStatusColor(order.status)}`}
-                        >
-                          {order.status}
-                        </span>
-                      </td>
-                      {orders.some((o) => isConcluded(o.status)) && (
+                      {showProfitLoss && (
                         <td className="px-4 py-2">
-                          {/* {order.profitLoss} */}
-                          {isConcluded(order.status) &&
+                          {orderIsFullyConcluded(order) &&
                           order.profitLoss !== undefined ? (
                             <span
                               className={`font-bold ${
@@ -167,7 +185,7 @@ export function OrdersView({ orders, onCancel }: OrdersViewProps) {
                           : ""}
                       </td>
                       <td className="px-4 py-2">
-                        {order.status === "Live" && (
+                        {orderHasCancelableLeg(order) && (
                           <button
                             type="button"
                             onClick={() => onCancel(order.id)}
@@ -184,9 +202,9 @@ export function OrdersView({ orders, onCancel }: OrdersViewProps) {
                   <tr className="border-t-2 border-black bg-gray-100 font-bold dark:border-white dark:bg-gray-900">
                     <td className="px-4 py-3">Total</td>
                     <td className="px-4 py-3" />
-                    <td className="px-4 py-3">${totalCost.toFixed(2)}</td>
                     <td className="px-4 py-3" />
-                    {orders.some((o) => isConcluded(o.status)) && (
+                    <td className="px-4 py-3">${totalCost.toFixed(2)}</td>
+                    {showProfitLoss && (
                       <td className="px-4 py-3">
                         <span
                           className={

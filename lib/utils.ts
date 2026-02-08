@@ -2,13 +2,14 @@ import type { Leg } from "./types";
 
 let legCounter = 0;
 
-export function toLegs(config: Omit<Leg, "id" | "visible">[]): Leg[] {
+export function toLegs(config: Omit<Leg, "id" | "visible" | "status">[]): Leg[] {
   return config.map((l, i) => {
     legCounter++;
     return {
       ...l,
       id: `leg-${legCounter}-${i}`,
       visible: true,
+      status: "Working",
     };
   });
 }

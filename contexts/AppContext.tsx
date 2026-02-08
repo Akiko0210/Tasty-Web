@@ -44,6 +44,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             side: "Long",
             size: 1,
             price: 7.77,
+            status: "Working",
           },
           {
             id: "leg-2",
@@ -53,9 +54,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             side: "Short",
             size: 1,
             price: 6.27,
+            status: "Partially filled",
           },
         ],
-        status: "Live",
         createdAt: new Date(now.getTime() - 30 * 60 * 1000),
         totalCost: -150,
       },
@@ -71,6 +72,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             side: "Short",
             size: 1,
             price: 7.77,
+            status: "Filled",
           },
           {
             id: "leg-4",
@@ -80,6 +82,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             side: "Long",
             size: 2,
             price: 7.44,
+            status: "Filled",
           },
           {
             id: "leg-5",
@@ -89,9 +92,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             side: "Short",
             size: 1,
             price: 6.27,
+            status: "Filled",
           },
         ],
-        status: "Filled",
         createdAt: new Date(now.getTime() - 2 * 60 * 60 * 1000),
         totalCost: -111,
         profitLoss: 234.5,
@@ -108,6 +111,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             side: "Long",
             size: 1,
             price: 4.2,
+            status: "Filled",
           },
           {
             id: "leg-7",
@@ -117,6 +121,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             side: "Short",
             size: 1,
             price: 5.1,
+            status: "Filled",
           },
           {
             id: "leg-8",
@@ -126,6 +131,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             side: "Short",
             size: 1,
             price: 5.0,
+            status: "Filled",
           },
           {
             id: "leg-9",
@@ -135,9 +141,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             side: "Long",
             size: 1,
             price: 4.0,
+            status: "Filled",
           },
         ],
-        status: "Completed",
         createdAt: new Date(now.getTime() - 24 * 60 * 60 * 1000),
         totalCost: -10,
         profitLoss: 890,
@@ -154,6 +160,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             side: "Long",
             size: 1,
             price: 9.2,
+            status: "Expired",
           },
           {
             id: "leg-11",
@@ -163,9 +170,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             side: "Short",
             size: 1,
             price: 7.44,
+            status: "Expired",
           },
         ],
-        status: "Expired",
         createdAt: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000),
         totalCost: -176,
         profitLoss: -125.5,
@@ -182,6 +189,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             side: "Long",
             size: 1,
             price: 8.5,
+            status: "Working",
           },
           {
             id: "leg-13",
@@ -191,6 +199,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             side: "Short",
             size: 1,
             price: 7.77,
+            status: "Working",
           },
           {
             id: "leg-14",
@@ -200,6 +209,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             side: "Short",
             size: 1,
             price: 6.27,
+            status: "Working",
           },
           {
             id: "leg-15",
@@ -209,11 +219,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
             side: "Long",
             size: 1,
             price: 5.1,
+            status: "Working",
           },
         ],
-        status: "In-Draft",
         createdAt: new Date(now.getTime() - 5 * 60 * 1000),
         totalCost: -10,
+      },
+      {
+        id: "order-rejected-1",
+        strategyName: "Vertical",
+        legs: [
+          {
+            id: "leg-16",
+            strike: 689,
+            type: "Put",
+            expiration: "Feb 6",
+            side: "Long",
+            size: 1,
+            price: 12.0,
+            status: "Rejected",
+          },
+          {
+            id: "leg-17",
+            strike: 693,
+            type: "Put",
+            expiration: "Feb 6",
+            side: "Short",
+            size: 1,
+            price: 8.0,
+            status: "Rejected",
+          },
+        ],
+        createdAt: new Date(now.getTime() - 10 * 60 * 1000),
+        totalCost: -400,
       },
     ];
   }, []);
@@ -226,10 +264,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          existingOrders = parsed.map((o: any) => ({
-            ...o,
-            createdAt: new Date(o.createdAt),
-          }));
+          existingOrders = parsed.map((o: any) => {
+            const { status: _s, ...rest } = o;
+            return { ...rest, createdAt: new Date(o.createdAt) };
+          });
         }
       } catch {
         // ignore, we'll fall back to samples
@@ -274,11 +312,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (orderId: string) => {
       setOrders((prev) => {
         const order = prev.find((o) => o.id === orderId);
-        if (!order || order.status !== "Live") return prev;
-        // reverse the balance impact of placing the order
+        const canCancel = order?.legs.some(
+          (l) => l.status === "Working" || l.status === "Partially filled",
+        );
+        if (!order || !canCancel) return prev;
         setBalance((b) => b - order.totalCost);
         return prev.map((o) =>
-          o.id === orderId ? { ...o, status: "Expired" as const } : o,
+          o.id === orderId
+            ? {
+                ...o,
+                legs: o.legs.map((l) =>
+                  l.status === "Working" || l.status === "Partially filled"
+                    ? { ...l, status: "Canceled" as const }
+                    : l,
+                ),
+              }
+            : o,
         );
       });
     },

@@ -72,6 +72,7 @@ export function StrategyPanel() {
       ...base,
       id: `leg-${Math.random().toString(36).substring(2, 9)}-${list.length}`,
       visible: true,
+      status: "Working",
     };
     setLegsByStrategy((prev) => ({
       ...prev,
@@ -89,7 +90,6 @@ export function StrategyPanel() {
       id: `order-${Math.random().toString(36).substring(2, 9)}-${Date.now()}`,
       strategyName: strategyConfigs[selected].name,
       legs: legs.map((l) => ({ ...l })),
-      status: "Live",
       createdAt: new Date(),
       totalCost,
     };

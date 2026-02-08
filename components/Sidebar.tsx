@@ -16,7 +16,7 @@ export function Sidebar({ strategies }: SidebarProps) {
   const active = pathname === "/orders" ? "orders" : "strategy";
 
   return (
-    <aside className="flex fixed h-full w-64 shrink-0 flex-col border-r-2 border-black bg-white dark:border-white dark:bg-black">
+    <aside className="flex fixed h-full w-64 flex-col border-r-2 border-black bg-white dark:border-white dark:bg-black">
       <StrategySelector
         strategies={strategies}
         selected={selected}
