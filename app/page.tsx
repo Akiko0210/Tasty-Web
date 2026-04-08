@@ -9,7 +9,7 @@ import { StrategyDropdown } from "../components/StrategyDropdown";
 import { LegRow } from "../components/LegRow";
 
 export default function StrategyPanel() {
-  const { balance, setBalance, setOrders, selected, setSelected } = useApp();
+  const { balance, setBalance, selected, setSelected } = useApp();
   const [legsByStrategy, setLegsByStrategy] = useState<Record<number, Leg[]>>(
     {},
   );
@@ -105,7 +105,6 @@ export default function StrategyPanel() {
       createdAt: new Date(),
       totalCost,
     };
-    setOrders((prev) => [newOrder, ...prev]);
     setBalance((prev: number) => prev + totalCost);
   }
 

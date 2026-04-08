@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import type { Order, Leg } from "@/lib/types";
-import { useApp } from "@/contexts/AppContext";
 import { useTastyworksOrders } from "@/hooks/useTastyworksOrders";
 
 function formatLegDescription(leg: Leg): string {
@@ -64,7 +63,6 @@ function getDefaultDateRange() {
 }
 
 export default function OrdersView() {
-  const { orders: contextOrders, cancelOrder } = useApp();
   const [statusFilter, setStatusFilter] = useState("All");
   const [symbolFilter, setSymbolFilter] = useState("");
   const [dateStart, setDateStart] = useState("");
@@ -293,17 +291,7 @@ export default function OrdersView() {
                           })}
                         </div>
                       </td>
-                      <td className="px-2 py-2 sm:px-4">
-                        {order.status === "Working" && (
-                          <button
-                            type="button"
-                            onClick={() => cancelOrder(order.id)}
-                            className="min-h-[44px] min-w-[44px] touch-manipulation rounded border-2 border-red-600 px-2 py-1.5 text-xs font-bold text-red-600 hover:bg-red-600 hover:text-white dark:border-red-400 dark:text-red-400 dark:hover:bg-red-600 dark:hover:text-white"
-                          >
-                            Cancel
-                          </button>
-                        )}
-                      </td>
+                      <td className="px-2 py-2 sm:px-4" />
                     </tr>
                   );
                 })}
