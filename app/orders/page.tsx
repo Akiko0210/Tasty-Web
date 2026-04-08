@@ -1,9 +1,7 @@
-"use client";
+"use server";
 
-import { OrdersView } from "@/components/OrdersView";
-import { useApp } from "@/contexts/AppContext";
+import OrdersView from "./OrdersView";
 
-export default function OrdersPage() {
-  const { orders, cancelOrder } = useApp();
-  return <OrdersView orders={orders} onCancel={cancelOrder} />;
+export default async function Page() {
+  return <OrdersView />;
 }

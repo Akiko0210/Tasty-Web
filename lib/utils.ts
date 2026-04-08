@@ -2,7 +2,9 @@ import type { Leg } from "./types";
 
 let legCounter = 0;
 
-export function toLegs(config: Omit<Leg, "id" | "visible" | "status">[]): Leg[] {
+export function toLegs(
+  config: Omit<Leg, "id" | "visible" | "status" | "daysToExpiry">[],
+): Leg[] {
   return config.map((l, i) => {
     legCounter++;
     return {
@@ -10,6 +12,7 @@ export function toLegs(config: Omit<Leg, "id" | "visible" | "status">[]): Leg[] 
       id: `leg-${legCounter}-${i}`,
       visible: true,
       status: "Working",
+      daysToExpiry: 16,
     };
   });
 }
