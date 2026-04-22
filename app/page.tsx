@@ -3,9 +3,10 @@
 import { useState, useEffect, useMemo } from "react";
 import type { Leg, Order, OptionType, Side } from "@/lib/types";
 import { strategyConfigs, SYMBOLS, UNDERLYING_QUOTE_SYMBOL } from "@/lib/constants";
-import { toLegs, calculateTotalCost, legToSymbol, buildStrategyLegs, buildOrderPayload } from "@/lib/utils";
+import { toLegs, calculateTotalCost, legToSymbol, buildStrategyLegs, buildOrderPayload, resolveStrikeOnExpChange } from "@/lib/utils";
 import { useApp } from "@/contexts/AppContext";
 import type { Symbol } from "@/lib/constants";
+import { MULTI_EXPIRY_STRATEGIES } from "@/lib/constants";
 import type { OrderPayload, DryRunResult } from "@/lib/types";
 import { dryRunOrder, submitOrder } from "@/api/placeOrder";
 import { StrategyDropdown } from "../components/StrategyDropdown";
@@ -28,6 +29,8 @@ export default function StrategyPanel() {
   const [legsByStrategy, setLegsByStrategy] = useState<Record<string, Leg[]>>({});
   const [dropdownOpen, setDropdownOpen] = useState<boolean>(false);
   const [symbolDropdownOpen, setSymbolDropdownOpen] = useState<boolean>(false);
+  const [showLegPrices, setShowLegPrices] = useState(false);
+  const [orderPriceOverride, setOrderPriceOverride] = useState<string | null>(null);
 
   // Order confirmation flow
   const [tif, setTif] = useState<"Day" | "GTC">("Day");
@@ -45,6 +48,7 @@ export default function StrategyPanel() {
   const realStrikes = chain?.strikes ?? [];
   const chainExpirations = chain?.expirations ?? [];
   const strikesByExpiration = chain?.strikesByExpiration ?? {};
+  const expirationToRoot = chain?.expirationToRoot ?? {};
   const optionChainStatus = chain?.status ?? "loading";
   const optionChainError = chain?.error ?? null;
 
@@ -57,12 +61,47 @@ export default function StrategyPanel() {
   const legs = strategyKey ? (legsByStrategy[strategyKey] ?? []) : [];
   const totalCost = calculateTotalCost(legs);
 
+  // Reset price override when switching strategies
+  useEffect(() => {
+    setOrderPriceOverride(null);
+  }, [strategyKey]);
+
+  // Total bid/ask across all legs (NaN if any quote is missing)
+  const totalBidDollars = legs.reduce((sum, leg) => {
+    const sym = legToSymbol(leg, selectedSymbol, expirationToRoot);
+    const q = sym ? quotes[sym] : undefined;
+    if (!q) return NaN;
+    const c = q.bid * leg.size * 100;
+    return sum + (leg.side === "Long" ? -c : c);
+  }, 0);
+  const totalAskDollars = legs.reduce((sum, leg) => {
+    const sym = legToSymbol(leg, selectedSymbol, expirationToRoot);
+    const q = sym ? quotes[sym] : undefined;
+    if (!q) return NaN;
+    const c = q.ask * leg.size * 100;
+    return sum + (leg.side === "Long" ? -c : c);
+  }, 0);
+
+  const totalMidDollars = isNaN(totalBidDollars) || isNaN(totalAskDollars)
+    ? NaN
+    : (totalBidDollars + totalAskDollars) / 2;
+
+  // Direction (credit/debit) is fixed by mid price; user only types the magnitude.
+  const directionSign = isNaN(totalMidDollars)
+    ? (totalCost >= 0 ? 1 : -1)
+    : (totalMidDollars >= 0 ? 1 : -1);
+
+  const parsedOverride = orderPriceOverride !== null ? parseFloat(orderPriceOverride) : NaN;
+  const effectiveTotalCost = isNaN(parsedOverride)
+    ? totalCost
+    : directionSign * Math.abs(parsedOverride);
+
   const underlyingQuoteSymbol = UNDERLYING_QUOTE_SYMBOL[selectedSymbol];
   const underlyingQuote = quotes[underlyingQuoteSymbol];
   const currentPrice = underlyingQuote?.last ?? null;
 
   const legSymbols = useMemo(
-    () => legs.flatMap((leg) => { const sym = legToSymbol(leg, selectedSymbol); return sym ? [sym] : []; }),
+    () => legs.flatMap((leg) => { const sym = legToSymbol(leg, selectedSymbol, expirationToRoot); return sym ? [sym] : []; }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [legs.map((l) => legToSymbol(l, selectedSymbol)).join(",")],
   );
@@ -97,7 +136,7 @@ export default function StrategyPanel() {
       let changed = false;
       const updated = list.map((leg) => {
         if (leg.price !== 0) return leg;
-        const sym = legToSymbol(leg, selectedSymbol);
+        const sym = legToSymbol(leg, selectedSymbol, expirationToRoot);
         const quote = sym ? quotes[sym] : undefined;
         if (!quote) return leg;
         const mid = (quote.bid + quote.ask) / 2;
@@ -150,10 +189,32 @@ export default function StrategyPanel() {
   if (selected === null) return null;
 
   function updateLeg(legId: string, updates: Partial<Leg>) {
-    if (!strategyKey) return;
+    if (!strategyKey || selected === null) return;
+    const strategyName = strategyConfigs[selected].name;
+    const syncExpiry =
+      updates.expiration !== undefined && !MULTI_EXPIRY_STRATEGIES.has(strategyName);
+
     setLegsByStrategy((prev) => {
       const list = prev[strategyKey] ?? [];
-      return { ...prev, [strategyKey]: list.map((l) => (l.id === legId ? { ...l, ...updates } : l)) };
+      if (syncExpiry) {
+        const newExp = updates.expiration!;
+        return {
+          ...prev,
+          [strategyKey]: list.map((l) => {
+            if (l.id === legId) {
+              // Caller already resolved this leg's strike; apply all updates as-is.
+              return { ...l, ...updates };
+            }
+            // Sync expiration and resolve the closest strike for every other leg.
+            const newStrike = resolveStrikeOnExpChange(newExp, l.strike, realStrikes, strikesByExpiration);
+            return { ...l, expiration: newExp, strike: newStrike };
+          }),
+        };
+      }
+      return {
+        ...prev,
+        [strategyKey]: list.map((l) => (l.id === legId ? { ...l, ...updates } : l)),
+      };
     });
   }
 
@@ -203,7 +264,7 @@ export default function StrategyPanel() {
     setDryRunError(null);
     setIsDryRunning(true);
     try {
-      const payload = buildOrderPayload(legs, selectedSymbol, totalCost, tif);
+      const payload = buildOrderPayload(legs, selectedSymbol, effectiveTotalCost, tif, expirationToRoot);
       const dryRun = await dryRunOrder(payload);
       const order: Order = {
         id: `order-${Math.random().toString(36).substring(2, 9)}-${Date.now()}`,
@@ -214,7 +275,7 @@ export default function StrategyPanel() {
         tif,
         legs: legs.map((l) => ({ ...l, daysToExpiry: l.daysToExpiry ?? 16 })),
         createdAt: new Date(),
-        totalCost,
+        totalCost: effectiveTotalCost,
       };
       setPendingOrder({ order, payload, dryRun });
     } catch (err) {
@@ -301,12 +362,47 @@ export default function StrategyPanel() {
               onSelect={setSelected}
             />
           </div>
+          <button
+            type="button"
+            onClick={() => setShowLegPrices((p) => !p)}
+            className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider opacity-50 hover:opacity-100"
+          >
+            Leg prices {showLegPrices ? "▲" : "▼"}
+          </button>
         </header>
+
+        {/* ── Bid / Mid / Ask — always visible, above legs ──────────────────── */}
+        <div className="flex items-start justify-center gap-8 border-b-2 border-black/10 px-4 py-3 dark:border-white/10">
+          {[
+            { label: "Bid", val: totalBidDollars },
+            { label: "Mid", val: totalMidDollars },
+            { label: "Ask", val: totalAskDollars },
+          ].map(({ label, val }) => (
+            <div key={label} className="flex flex-col items-center gap-0">
+              <span className="text-xs font-bold uppercase tracking-wider opacity-50">{label}</span>
+              <span className="font-mono text-sm font-bold">
+                {isNaN(val) ? "—" : `$${Math.abs(val).toFixed(2)}`}
+              </span>
+              {!isNaN(val) && (
+                <span className="text-xs opacity-40">{val >= 0 ? "cr" : "db"}</span>
+              )}
+            </div>
+          ))}
+        </div>
 
         {/* ── Mobile card list (< sm) ──────────────────────────────────────── */}
         <div className="sm:hidden divide-y-2 divide-black/10 dark:divide-white/10">
+          {!showLegPrices && legs.length > 0 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto border-b border-black/10 px-3 py-1 dark:border-white/10">
+              <span className="w-[52px] shrink-0 text-center text-xs font-bold uppercase tracking-wider opacity-40">S/L</span>
+              <span className="w-[44px] shrink-0 text-center text-xs font-bold uppercase tracking-wider opacity-40">Type</span>
+              <span className="w-20 shrink-0 text-center text-xs font-bold uppercase tracking-wider opacity-40">Strike</span>
+              <span className="w-20 shrink-0 text-center text-xs font-bold uppercase tracking-wider opacity-40">Expiry</span>
+              <span className="w-12 shrink-0 text-center text-xs font-bold uppercase tracking-wider opacity-40">Size</span>
+            </div>
+          )}
           {legs.map((leg) => {
-            const sym = legToSymbol(leg, selectedSymbol);
+            const sym = legToSymbol(leg, selectedSymbol, expirationToRoot);
             const quote = sym ? quotes[sym] : undefined;
             return (
               <LegCard
@@ -320,6 +416,7 @@ export default function StrategyPanel() {
                 expirations={chainExpirations}
                 strikesByExpiration={strikesByExpiration}
                 rootSymbol={selectedSymbol}
+                showPriceDetails={showLegPrices}
               />
             );
           })}
@@ -340,15 +437,19 @@ export default function StrategyPanel() {
                     <span className="cursor-help opacity-70" title="Number of contracts">ⓘ</span>
                   </span>
                 </th>
-                <th className="px-4 py-3">Price</th>
-                <th className="px-4 py-3">Bid</th>
-                <th className="px-4 py-3">Ask</th>
+                {showLegPrices && (
+                  <>
+                    <th className="px-4 py-3">Price</th>
+                    <th className="px-4 py-3">Bid</th>
+                    <th className="px-4 py-3">Ask</th>
+                  </>
+                )}
                 <th className="w-20 px-4 py-3" />
               </tr>
             </thead>
             <tbody>
               {legs.map((leg) => {
-                const sym = legToSymbol(leg, selectedSymbol);
+                const sym = legToSymbol(leg, selectedSymbol, expirationToRoot);
                 const quote = sym ? quotes[sym] : undefined;
                 return (
                   <LegRow
@@ -362,6 +463,7 @@ export default function StrategyPanel() {
                     expirations={chainExpirations}
                     strikesByExpiration={strikesByExpiration}
                     rootSymbol={selectedSymbol}
+                    showPriceDetails={showLegPrices}
                   />
                 );
               })}
@@ -377,55 +479,56 @@ export default function StrategyPanel() {
               ))}
             </div>
           )}
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            {/* Actions */}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={addPosition}
-                className="rounded-lg border-2 border-dashed border-black px-4 py-2 text-sm font-bold transition hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black"
-              >
-                + New position
-              </button>
-              {/* TIF toggle */}
-              <div className="flex overflow-hidden rounded-lg border-2 border-black dark:border-white">
-                {(["Day", "GTC"] as const).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setTif(t)}
-                    className={`px-3 py-2 text-sm font-bold transition ${
-                      tif === t
-                        ? "bg-black text-white dark:bg-white dark:text-black"
-                        : "hover:bg-black/10 dark:hover:bg-white/10"
-                    }`}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                onClick={handleAddOrder}
-                disabled={isDryRunning || legs.length === 0}
-                className="rounded-lg border-2 border-black bg-black px-6 py-2 text-sm font-bold text-white transition hover:bg-black/80 disabled:opacity-50 dark:border-white dark:bg-white dark:text-black dark:hover:bg-white/80"
-              >
-                {isDryRunning ? "Checking…" : "Add Order"}
-              </button>
+          {/* Limit price — left-aligned, above action buttons */}
+          <div className="mb-3 flex items-center gap-2">
+            <span className="text-xs font-bold uppercase tracking-wider opacity-50">Limit price</span>
+            <input
+              type="number"
+              step={0.01}
+              value={orderPriceOverride ?? Math.abs(effectiveTotalCost).toFixed(2)}
+              onChange={(e) => setOrderPriceOverride(e.target.value)}
+              onBlur={() => {
+                if (orderPriceOverride !== null && isNaN(parseFloat(orderPriceOverride))) {
+                  setOrderPriceOverride(null);
+                }
+              }}
+              className="w-28 rounded border-2 border-black px-2 py-1 text-sm font-bold bg-white dark:border-white dark:bg-black"
+            />
+            <span className="text-xs font-bold opacity-50">{directionSign >= 0 ? "cr" : "db"}</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={addPosition}
+              className="rounded-lg border-2 border-dashed border-black px-4 py-2 text-sm font-bold transition hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black"
+            >
+              Add leg
+            </button>
+            {/* TIF toggle */}
+            <div className="flex overflow-hidden rounded-lg border-2 border-black dark:border-white">
+              {(["Day", "GTC"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTif(t)}
+                  className={`px-3 py-2 text-sm font-bold transition ${
+                    tif === t
+                      ? "bg-black text-white dark:bg-white dark:text-black"
+                      : "hover:bg-black/10 dark:hover:bg-white/10"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
             </div>
-            {/* Total */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium opacity-80">Total:</span>
-              <span
-                className={`text-lg font-bold ${
-                  totalCost >= 0
-                    ? "text-green-600 dark:text-green-400"
-                    : "text-red-600 dark:text-red-400"
-                }`}
-              >
-                {totalCost >= 0 ? "+" : ""}${totalCost.toFixed(2)}
-              </span>
-            </div>
+            <button
+              type="button"
+              onClick={handleAddOrder}
+              disabled={isDryRunning || legs.length === 0}
+              className="rounded-lg border-2 border-black bg-black px-6 py-2 text-sm font-bold text-white transition hover:bg-black/80 disabled:opacity-50 dark:border-white dark:bg-white dark:text-black dark:hover:bg-white/80"
+            >
+              {isDryRunning ? "Checking…" : "Add Order"}
+            </button>
           </div>
         </footer>
       </div>

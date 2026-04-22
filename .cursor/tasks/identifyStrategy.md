@@ -26,7 +26,7 @@
 
 ---
 
-### Short (Naked) Call
+### Short Call
 
 - **Action:** Sell a Call
 - **Strike:** OTM typically
@@ -37,7 +37,7 @@
 
 ---
 
-### Short (Naked) Put
+### Short Put
 
 - **Action:** Sell a Put
 - **Strike:** OTM typically
@@ -162,54 +162,18 @@
 
 ---
 
-## Stock + Option Strategies
-
-### Covered Call
-
-- **Leg 1:** Long 100 shares of stock
-- **Leg 2:** Sell 1 Call @ OTM strike
-- **Expiry:** Any
-- **Outlook:** Neutral to slightly Bullish
-- **Max Profit:** (Strike - Stock purchase price) + premium received
-- **Max Loss:** Stock price minus premium received
-
----
-
-### Protective Put
-
-- **Leg 1:** Long 100 shares of stock
-- **Leg 2:** Buy 1 Put @ ATM or OTM strike
-- **Expiry:** Any
-- **Outlook:** Bullish but hedged
-- **Max Profit:** Unlimited
-- **Max Loss:** (Stock purchase price - Put strike) + premium paid
-
----
-
-### Collar
-
-- **Leg 1:** Long 100 shares of stock
-- **Leg 2:** Buy Put @ OTM lower strike (protection)
-- **Leg 3:** Sell Call @ OTM higher strike (income)
-- **Expiry:** Same for options
-- **Outlook:** Neutral — limits both upside and downside
-- **Max Profit:** (Call strike - Stock price) + net credit/debit
-- **Max Loss:** (Stock price - Put strike) + net credit/debit
-
----
-
 ## Four-Leg Strategies
 
 ### Iron Condor
 
-- **Leg 1:** Sell OTM Put @ strike B
-- **Leg 2:** Buy OTM Put @ strike A (lower, for protection)
+- **Leg 1:** Buy OTM Put @ strike A (lowest)
+- **Leg 2:** Sell OTM Put @ strike B
 - **Leg 3:** Sell OTM Call @ strike C
-- **Leg 4:** Buy OTM Call @ strike D (higher, for protection)
-- **Strike order:** A < B < C < D
+- **Leg 4:** Buy OTM Call @ strike D (highest)
+- **Strike order:** A < B < C < D (equidistant wings typical)
 - **Expiry:** All same
 - **Outlook:** Neutral / Range-bound
-- **Max Profit:** Net credit received
+- **Max Profit:** Net credit received (stock stays between B and C)
 - **Max Loss:** Width of widest spread minus net credit
 
 ---
@@ -220,37 +184,79 @@
 - **Leg 2:** Sell ATM Put @ middle strike B
 - **Leg 3:** Sell ATM Call @ middle strike B (same as Leg 2)
 - **Leg 4:** Buy OTM Call @ higher strike C
-- **Strike order:** A < B < C
+- **Strike order:** A < B < C (equidistant)
 - **Expiry:** All same
-- **Outlook:** Neutral — expects stock to stay near ATM
+- **Outlook:** Neutral — expects stock to pin at ATM (B)
 - **Max Profit:** Net credit received (at expiry, stock = B)
 - **Max Loss:** Width of spread minus net credit
 
 ---
 
-### Long Butterfly Spread (All Calls or All Puts)
+### Long Butterfly
 
-- **Leg 1:** Buy 1 option @ low strike A
-- **Leg 2:** Sell 2 options @ middle strike B
-- **Leg 3:** Buy 1 option @ high strike C
+- **Leg 1:** Buy 1 Call (or Put) @ low strike A
+- **Leg 2:** Sell 2 Calls (or Puts) @ middle strike B
+- **Leg 3:** Buy 1 Call (or Put) @ high strike C
 - **Strike order:** A < B < C (equidistant)
 - **Expiry:** All same
-- **Outlook:** Neutral — expects stock to pin at B
-- **Max Profit:** Middle strike minus lower strike minus net debit
+- **Type:** All calls or all puts
+- **Outlook:** Neutral — expects stock to pin at B near expiry
+- **Max Profit:** (B - A) minus net debit (achieved when stock = B at expiry)
 - **Max Loss:** Net debit paid
+
+---
+
+### Condor
+
+- **Leg 1:** Buy 1 Call (or Put) @ lowest strike A
+- **Leg 2:** Sell 1 Call (or Put) @ lower-middle strike B
+- **Leg 3:** Sell 1 Call (or Put) @ upper-middle strike C
+- **Leg 4:** Buy 1 Call (or Put) @ highest strike D
+- **Strike order:** A < B < C < D (equidistant)
+- **Expiry:** All same
+- **Type:** All calls or all puts (unlike Iron Condor which mixes)
+- **Outlook:** Neutral / Range-bound — wider profit zone than butterfly
+- **Max Profit:** Net credit received (stock stays between B and C)
+- **Max Loss:** Width of outer spread minus net credit
+- **Note:** Like a Long Butterfly but with the body split into two strikes, creating a wider profit zone
+
+---
+
+### Double Diagonal
+
+- **Leg 1:** Sell near-term OTM Put @ strike B
+- **Leg 2:** Buy far-term OTM Put @ strike A (lower than B)
+- **Leg 3:** Sell near-term OTM Call @ strike C
+- **Leg 4:** Buy far-term OTM Call @ strike D (higher than C)
+- **Strike order:** A < B < C < D
+- **Expiry:** Near-term for sold legs, far-term for bought legs (two different expirations)
+- **Outlook:** Neutral near-term, expecting stock to stay between B and C
+- **Max Profit:** When both short options expire worthless and long options retain value
+- **Max Loss:** Net debit paid (limited)
+- **Note:** Combination of two diagonal spreads — a put diagonal and a call diagonal. Benefits from time decay on the short legs while long legs provide protection.
 
 ---
 
 ## Quick Reference Summary
 
-| Strategy         | Legs      | Outlook      | Risk      | Reward    |
-| ---------------- | --------- | ------------ | --------- | --------- |
-| Long Call        | 1         | Bullish      | Limited   | Unlimited |
-| Long Put         | 1         | Bearish      | Limited   | Large     |
-| Bull Call Spread | 2         | Mod. Bullish | Limited   | Limited   |
-| Bear Put Spread  | 2         | Mod. Bearish | Limited   | Limited   |
-| Long Straddle    | 2         | High Vol     | Limited   | Unlimited |
-| Short Strangle   | 2         | Low Vol      | Unlimited | Limited   |
-| Covered Call     | Stock + 1 | Neutral      | High      | Limited   |
-| Iron Condor      | 4         | Neutral      | Limited   | Limited   |
-| Iron Butterfly   | 4         | Neutral      | Limited   | Limited   |
+| Strategy         | Legs        | Expiry        | Outlook         | Risk      | Reward    |
+| ---------------- | ----------- | ------------- | --------------- | --------- | --------- |
+| Long Call        | 1           | Single        | Bullish         | Limited   | Unlimited |
+| Long Put         | 1           | Single        | Bearish         | Limited   | Large     |
+| Short Call       | 1           | Single        | Bearish/Neutral | Unlimited | Limited   |
+| Short Put        | 1           | Single        | Bullish/Neutral | Large     | Limited   |
+| Bull Call Spread | 2           | Same          | Mod. Bullish    | Limited   | Limited   |
+| Bear Put Spread  | 2           | Same          | Mod. Bearish    | Limited   | Limited   |
+| Bull Put Spread  | 2           | Same          | Mod. Bullish    | Limited   | Limited   |
+| Bear Call Spread | 2           | Same          | Mod. Bearish    | Limited   | Limited   |
+| Long Straddle    | 2           | Same          | High Vol        | Limited   | Unlimited |
+| Short Straddle   | 2           | Same          | Low Vol         | Unlimited | Limited   |
+| Long Strangle    | 2           | Same          | High Vol        | Limited   | Unlimited |
+| Short Strangle   | 2           | Same          | Low Vol         | Unlimited | Limited   |
+| Calendar Spread  | 2           | Different     | Neutral         | Limited   | Limited   |
+| Diagonal Spread  | 2           | Different     | Directional     | Limited   | Limited   |
+| Iron Condor      | 4           | Same          | Neutral         | Limited   | Limited   |
+| Iron Butterfly   | 4           | Same          | Neutral         | Limited   | Limited   |
+| Long Butterfly   | 4 (1/2/1)   | Same          | Neutral         | Limited   | Limited   |
+| Condor           | 4 (1/1/1/1) | Same          | Neutral         | Limited   | Limited   |
+| Double Diagonal  | 4           | Different (2) | Neutral         | Limited   | Limited   |

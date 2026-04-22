@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect, useLayoutEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import type { Leg } from "@/lib/types";
+import { resolveStrikeOnExpChange } from "@/lib/utils";
 import { TrashIcon } from "./Icons";
 
 function formatExpiration(dateStr: string): string {
@@ -20,6 +21,33 @@ interface LegRowProps {
   expirations?: string[];
   strikesByExpiration?: Record<string, number[]>;
   rootSymbol?: string;
+  showPriceDetails?: boolean;
+}
+
+function useFixedDropdown(open: boolean) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
+
+  const capture = useCallback(() => {
+    if (buttonRef.current) {
+      const r = buttonRef.current.getBoundingClientRect();
+      setPos({ top: r.bottom, left: r.left, width: r.width });
+    }
+  }, []);
+
+  // Close on scroll/resize so the list doesn't drift
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setPos((p) => ({ ...p })); // triggers re-read but callers handle via open state
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open]);
+
+  return { buttonRef, pos, capture };
 }
 
 function StrikeDropdown({
@@ -34,18 +62,20 @@ function StrikeDropdown({
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const { buttonRef, pos, capture } = useFixedDropdown(open);
 
   const currentIdx = strikes.indexOf(value);
   const itemHeight = 32;
   const visibleCount = 9;
   const maxHeight = visibleCount * itemHeight;
-  const positionInView = Math.min(currentIdx, 4);
-  const topOffset = -positionInView * itemHeight;
 
   useEffect(() => {
     if (!open) return;
     function handleClickOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      if (
+        containerRef.current && !containerRef.current.contains(e.target as Node) &&
+        listRef.current && !listRef.current.contains(e.target as Node)
+      ) {
         setOpen(false);
       }
     }
@@ -55,16 +85,16 @@ function StrikeDropdown({
 
   useLayoutEffect(() => {
     if (open && listRef.current) {
-      const scrollTop = Math.max(0, (currentIdx - 4) * itemHeight);
-      listRef.current.scrollTop = scrollTop;
+      listRef.current.scrollTop = Math.max(0, (currentIdx - 4) * itemHeight);
     }
   }, [open, currentIdx, itemHeight]);
 
   return (
     <div ref={containerRef} className="relative">
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={() => { capture(); setOpen((p) => !p); }}
         className="w-20 rounded border-2 border-black bg-white px-2 py-1.5 text-sm font-medium text-left dark:border-white dark:bg-black dark:text-white"
       >
         {value}
@@ -72,8 +102,8 @@ function StrikeDropdown({
       {open && (
         <ul
           ref={listRef}
-          style={{ maxHeight, top: topOffset }}
-          className="absolute left-0 z-50 w-20 overflow-y-auto rounded-lg border-2 border-blue-500 bg-white shadow-xl ring-2 ring-blue-500/20 dark:border-blue-400 dark:bg-black dark:ring-blue-400/20"
+          style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width, maxHeight, zIndex: 9999 }}
+          className="overflow-y-auto rounded-lg border-2 border-blue-500 bg-white shadow-xl ring-2 ring-blue-500/20 dark:border-blue-400 dark:bg-black dark:ring-blue-400/20"
         >
           {strikes.map((strike) => (
             <li key={strike}>
@@ -108,18 +138,20 @@ function ExpirationDropdown({
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const { buttonRef, pos, capture } = useFixedDropdown(open);
 
   const currentIdx = expirations.indexOf(value);
   const itemHeight = 32;
   const visibleCount = 9;
   const maxHeight = visibleCount * itemHeight;
-  const positionInView = Math.min(Math.max(currentIdx, 0), 4);
-  const topOffset = -positionInView * itemHeight;
 
   useEffect(() => {
     if (!open) return;
     function handleClickOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      if (
+        containerRef.current && !containerRef.current.contains(e.target as Node) &&
+        listRef.current && !listRef.current.contains(e.target as Node)
+      ) {
         setOpen(false);
       }
     }
@@ -129,16 +161,16 @@ function ExpirationDropdown({
 
   useLayoutEffect(() => {
     if (open && listRef.current) {
-      const scrollTop = Math.max(0, (currentIdx - 4) * itemHeight);
-      listRef.current.scrollTop = scrollTop;
+      listRef.current.scrollTop = Math.max(0, (currentIdx - 4) * itemHeight);
     }
   }, [open, currentIdx, itemHeight]);
 
   return (
     <div ref={containerRef} className="relative">
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={() => { capture(); setOpen((p) => !p); }}
         className="w-20 rounded border-2 border-black bg-white px-2 py-1.5 text-sm font-medium text-left dark:border-white dark:bg-black dark:text-white"
       >
         {value ? formatExpiration(value) : "—"}
@@ -146,8 +178,8 @@ function ExpirationDropdown({
       {open && (
         <ul
           ref={listRef}
-          style={{ maxHeight, top: topOffset }}
-          className="absolute left-0 z-50 w-24 overflow-y-auto rounded-lg border-2 border-blue-500 bg-white shadow-xl ring-2 ring-blue-500/20 dark:border-blue-400 dark:bg-black dark:ring-blue-400/20"
+          style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width, maxHeight, zIndex: 9999 }}
+          className="overflow-y-auto rounded-lg border-2 border-blue-500 bg-white shadow-xl ring-2 ring-blue-500/20 dark:border-blue-400 dark:bg-black dark:ring-blue-400/20"
         >
           {expirations.map((exp) => (
             <li key={exp}>
@@ -181,21 +213,6 @@ function useStrikesForExp(
     : (strikes ?? []);
 }
 
-// Shared helper: pick closest strike when expiration changes
-function resolveStrikeOnExpChange(
-  newExp: string,
-  currentStrike: number,
-  strikes: number[] | undefined,
-  strikesByExpiration: Record<string, number[]> | undefined,
-): number {
-  const newStrikes = strikesByExpiration?.[newExp] ?? strikes ?? [];
-  if (newStrikes.includes(currentStrike)) return currentStrike;
-  if (!newStrikes.length) return currentStrike;
-  return newStrikes.reduce((best, s) =>
-    Math.abs(s - currentStrike) < Math.abs(best - currentStrike) ? s : best,
-  );
-}
-
 // ── Side / type button styles ─────────────────────────────────────────────────
 
 const sideClass = (side: string) =>
@@ -219,6 +236,7 @@ export function LegRow({
   strikes,
   expirations,
   strikesByExpiration,
+  showPriceDetails = false,
 }: LegRowProps) {
   const strikesForExp = useStrikesForExp(leg, strikes, strikesByExpiration);
 
@@ -255,15 +273,19 @@ export function LegRow({
           className="w-14 rounded border-2 border-black bg-white px-2 py-1.5 text-sm font-medium dark:border-white dark:bg-black dark:text-white"
         />
       </td>
-      <td className="px-4 py-2">
-        <input
-          type="number" step={0.01} value={leg.price}
-          onChange={(e) => onUpdate({ price: Number(e.target.value) || 0 })}
-          className="w-20 rounded border-2 border-black bg-white px-2 py-1.5 text-sm font-medium dark:border-white dark:bg-black dark:text-white"
-        />
-      </td>
-      <td className="px-4 py-2 font-mono text-sm">{bid !== undefined ? bid.toFixed(2) : "—"}</td>
-      <td className="px-4 py-2 font-mono text-sm">{ask !== undefined ? ask.toFixed(2) : "—"}</td>
+      {showPriceDetails && (
+        <>
+          <td className="px-4 py-2">
+            <input
+              type="number" step={0.01} value={leg.price}
+              onChange={(e) => onUpdate({ price: Number(e.target.value) || 0 })}
+              className="w-20 rounded border-2 border-black bg-white px-2 py-1.5 text-sm font-medium dark:border-white dark:bg-black dark:text-white"
+            />
+          </td>
+          <td className="px-4 py-2 font-mono text-sm">{bid !== undefined ? bid.toFixed(2) : "—"}</td>
+          <td className="px-4 py-2 font-mono text-sm">{ask !== undefined ? ask.toFixed(2) : "—"}</td>
+        </>
+      )}
       <td className="px-4 py-2">
         <button type="button" onClick={onRemove} className="rounded border-2 border-red-600 p-1 text-red-600 hover:bg-red-600 hover:text-white dark:border-red-400 dark:text-red-400 dark:hover:bg-red-600 dark:hover:text-white" aria-label="Remove leg">
           <TrashIcon />
@@ -284,9 +306,55 @@ export function LegCard({
   strikes,
   expirations,
   strikesByExpiration,
+  showPriceDetails = false,
 }: LegRowProps) {
   const strikesForExp = useStrikesForExp(leg, strikes, strikesByExpiration);
 
+  if (!showPriceDetails) {
+    // ── Collapsed: single row ──────────────────────────────────────────────
+    return (
+      <div className="flex items-center gap-1.5 overflow-x-auto px-3 py-2">
+        <button
+          type="button"
+          onClick={() => onUpdate({ side: leg.side === "Short" ? "Long" : "Short" })}
+          className={sideClass(leg.side)}
+        >
+          {leg.side}
+        </button>
+        <button
+          type="button"
+          onClick={() => onUpdate({ type: leg.type === "Call" ? "Put" : "Call" })}
+          className={typeClass}
+        >
+          {leg.type}
+        </button>
+        <StrikeDropdown
+          value={leg.strike}
+          onChange={(strike) => onUpdate({ strike })}
+          strikes={strikesForExp}
+        />
+        <ExpirationDropdown
+          value={leg.expiration}
+          onChange={(exp) => onUpdate({ expiration: exp, strike: resolveStrikeOnExpChange(exp, leg.strike, strikes, strikesByExpiration) })}
+          expirations={expirations}
+        />
+        <input
+          type="number" min={1} value={leg.size}
+          onChange={(e) => onUpdate({ size: Math.max(1, Number(e.target.value) || 1) })}
+          className="w-12 shrink-0 rounded border-2 border-black bg-white px-2 py-1.5 text-sm font-medium dark:border-white dark:bg-black dark:text-white"
+        />
+        <button
+          type="button" onClick={onRemove}
+          className="ml-auto shrink-0 rounded border-2 border-red-600 p-1.5 text-red-600 hover:bg-red-600 hover:text-white dark:border-red-400 dark:text-red-400 dark:hover:bg-red-600 dark:hover:text-white"
+          aria-label="Remove leg"
+        >
+          <TrashIcon />
+        </button>
+      </div>
+    );
+  }
+
+  // ── Expanded: multi-row with price details ─────────────────────────────
   return (
     <div className="space-y-3 px-4 py-3">
       {/* Row 1 — Side · Type · Size · Delete */}
@@ -305,7 +373,6 @@ export function LegCard({
         >
           {leg.type}
         </button>
-
         <div className="ml-auto flex items-center gap-2">
           <div className="flex items-center gap-1">
             <span className="text-xs font-bold opacity-40">×</span>

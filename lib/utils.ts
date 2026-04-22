@@ -19,24 +19,35 @@ export function toLegs(
 
 // Builds a dxFeed option symbol from a leg. Requires expiration in YYYY-MM-DD format.
 // Returns null if the expiration can't be parsed.
-export function legToSymbol(leg: Leg, rootSymbol = "SPX"): string | null {
+// expirationToRoot maps expiration date → actual root symbol (e.g. "SPXW" for weekly SPX options).
+export function legToSymbol(
+  leg: Leg,
+  rootSymbol = "SPX",
+  expirationToRoot?: Record<string, string>,
+): string | null {
   const match = leg.expiration.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return null;
   const [, yyyy, mm, dd] = match;
   const cp = leg.type === "Call" ? "C" : "P";
-  return `.${rootSymbol}${yyyy.slice(2)}${mm}${dd}${cp}${leg.strike}`;
+  const effectiveRoot = expirationToRoot?.[leg.expiration] ?? rootSymbol;
+  return `.${effectiveRoot}${yyyy.slice(2)}${mm}${dd}${cp}${leg.strike}`;
 }
 
 // Builds an OCC option symbol for the TastyTrade API.
 // Format: ROOT(6 chars) + YYMMDD + C/P + strike×1000 (8 digits, zero-padded)
 // Example: SPX 2026-05-15 Call 6700 → "SPX   260515C06700000"
-export function legToOccSymbol(leg: Leg, rootSymbol: string): string {
+export function legToOccSymbol(
+  leg: Leg,
+  rootSymbol: string,
+  expirationToRoot?: Record<string, string>,
+): string {
   const match = leg.expiration.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return "";
   const [, yyyy, mm, dd] = match;
   const cp = leg.type === "Call" ? "C" : "P";
   const strikeInt = Math.round(leg.strike * 1000);
-  return `${rootSymbol.padEnd(6, " ")}${yyyy.slice(2)}${mm}${dd}${cp}${strikeInt.toString().padStart(8, "0")}`;
+  const effectiveRoot = expirationToRoot?.[leg.expiration] ?? rootSymbol;
+  return `${effectiveRoot.padEnd(6, " ")}${yyyy.slice(2)}${mm}${dd}${cp}${strikeInt.toString().padStart(8, "0")}`;
 }
 
 // Builds the TastyTrade API order payload from the current legs.
@@ -47,6 +58,7 @@ export function buildOrderPayload(
   rootSymbol: string,
   totalCost: number,
   tif: "Day" | "GTC" = "Day",
+  expirationToRoot?: Record<string, string>,
 ): OrderPayload {
   const unpricedCount = legs.filter((l) => l.price === 0).length;
   if (unpricedCount > 0) {
@@ -65,7 +77,7 @@ export function buildOrderPayload(
     "price-effect": priceEffect,
     legs: legs.map((leg) => ({
       "instrument-type": "Equity Option",
-      symbol: legToOccSymbol(leg, rootSymbol),
+      symbol: legToOccSymbol(leg, rootSymbol, expirationToRoot),
       quantity: leg.size,
       action: leg.side === "Long" ? "Buy to Open" : "Sell to Open",
     })),
@@ -77,6 +89,21 @@ export function calculateTotalCost(legs: Leg[]): number {
     const cost = leg.price * leg.size * 100;
     return total + (leg.side === "Long" ? -cost : cost);
   }, 0);
+}
+
+// Returns the closest available strike for a new expiration.
+export function resolveStrikeOnExpChange(
+  newExp: string,
+  currentStrike: number,
+  strikes: number[] | undefined,
+  strikesByExpiration: Record<string, number[]> | undefined,
+): number {
+  const newStrikes = strikesByExpiration?.[newExp] ?? strikes ?? [];
+  if (newStrikes.includes(currentStrike)) return currentStrike;
+  if (!newStrikes.length) return currentStrike;
+  return newStrikes.reduce((best, s) =>
+    Math.abs(s - currentStrike) < Math.abs(best - currentStrike) ? s : best,
+  );
 }
 
 // Returns the index of the strike closest to the given price.

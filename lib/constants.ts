@@ -9,6 +9,14 @@ export const UNDERLYING_QUOTE_SYMBOL: Record<Symbol, string> = {
   AAPL: "AAPL",
 };
 
+// Strategies where each leg can have an independent expiration date.
+// All other multi-leg strategies share a single expiration across all legs.
+export const MULTI_EXPIRY_STRATEGIES = new Set([
+  "Calendar Spread",
+  "Diagonal Spread",
+  "Double Diagonal",
+]);
+
 export const strategyConfigs: StrategyConfig[] = [
   // Single leg
   { name: "Long Call" },
