@@ -33,7 +33,7 @@ export default function RootLayout({
         <AppProvider>
           <div className="flex bg-white font-sans text-black dark:bg-black dark:text-white">
             <Sidebar strategies={strategyConfigs} />
-            <main className="flex-1 ml-64">{children}</main>
+            <main className="flex-1 pt-14 lg:ml-64 lg:pt-0">{children}</main>
           </div>
         </AppProvider>
       </body>

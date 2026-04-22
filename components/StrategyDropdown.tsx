@@ -32,7 +32,7 @@ export function StrategyDropdown({
       {isOpen && (
         <>
           <div className="fixed inset-0 z-10" onClick={onToggle} />
-          <div className="absolute left-0 top-full z-20 mt-1 w-48 rounded border-2 border-black bg-white shadow-lg dark:border-white dark:bg-black">
+          <div className="absolute left-0 top-full z-20 mt-1 w-48 rounded-lg border-2 border-black bg-white shadow-[0_8px_32px_rgba(0,0,0,0.22)] dark:border-white dark:bg-neutral-900 dark:shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
             {strategies.map((cfg, idx) => (
               <button
                 key={cfg.name}

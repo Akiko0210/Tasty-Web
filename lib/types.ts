@@ -16,7 +16,6 @@ export interface Leg {
 
 export interface StrategyConfig {
   name: string;
-  defaultLegs: Omit<Leg, "id" | "visible" | "status" | "daysToExpiry">[];
 }
 
 export interface Order {
@@ -30,4 +29,42 @@ export interface Order {
   orderNumber: string;
   tif: string;
   profitLoss?: number;
+}
+
+// ── Order placement ───────────────────────────────────────────────────────────
+
+export interface OrderPayload {
+  "time-in-force": "Day" | "GTC";
+  "order-type": "Limit";
+  price: string;
+  "price-effect": "Debit" | "Credit";
+  legs: {
+    "instrument-type": string;
+    symbol: string;
+    quantity: number;
+    action: string;
+  }[];
+}
+
+export interface DryRunResult {
+  order: { id: number; status: string; price: string; "price-effect": string };
+  warnings: { message: string }[];
+  "buying-power-effect": {
+    "change-in-buying-power": string;
+    "current-buying-power": string;
+    "new-buying-power": string;
+    impact: string;
+    effect: string;
+  };
+  "fee-calculation": {
+    commission: string;
+    "regulatory-fees": string;
+    "clearing-fees": string;
+    "total-fees": string;
+  };
+}
+
+export interface PlaceOrderResult {
+  order: { id: number; status: string };
+  warnings: { message: string }[];
 }

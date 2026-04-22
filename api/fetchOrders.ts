@@ -184,7 +184,7 @@ function identifyStrategy(legs: Leg[]): string {
   }
 
   // Four legs
-  if (legs.length === 4 && allSameExpiry) {
+  if (legs.length === 4) {
     const puts = sorted
       .filter((l) => l.type === "Put")
       .sort((a, b) => a.strike - b.strike);
@@ -192,15 +192,54 @@ function identifyStrategy(legs: Leg[]): string {
       .filter((l) => l.type === "Call")
       .sort((a, b) => a.strike - b.strike);
 
-    if (puts.length === 2 && calls.length === 2) {
-      if (
-        puts[0].side === "Long" &&
-        puts[1].side === "Short" &&
-        calls[0].side === "Short" &&
-        calls[1].side === "Long"
-      ) {
-        if (puts[1].strike === calls[0].strike) return "Iron Butterfly";
-        return "Iron Condor";
+    if (allSameExpiry) {
+      // Iron Condor / Iron Butterfly: 2 puts + 2 calls
+      if (puts.length === 2 && calls.length === 2) {
+        if (
+          puts[0].side === "Long" &&
+          puts[1].side === "Short" &&
+          calls[0].side === "Short" &&
+          calls[1].side === "Long"
+        ) {
+          if (puts[1].strike === calls[0].strike) return "Iron Butterfly";
+          return "Iron Condor";
+        }
+      }
+
+      // Condor: 4 same-type legs — Long A, Short B, Short C, Long D
+      if (calls.length === 4 || puts.length === 4) {
+        const quad = calls.length === 4 ? calls : puts;
+        if (
+          quad[0].side === "Long" &&
+          quad[1].side === "Short" &&
+          quad[2].side === "Short" &&
+          quad[3].side === "Long"
+        ) {
+          return "Condor";
+        }
+      }
+    } else {
+      // Double Diagonal: 4 legs across 2 expirations
+      // far put Long + near put Short + near call Short + far call Long
+      const expirations = [...new Set(sorted.map((l) => l.expiration))].sort();
+      if (expirations.length === 2) {
+        const [nearExp, farExp] = expirations;
+        const nearLegs = sorted.filter((l) => l.expiration === nearExp);
+        const farLegs = sorted.filter((l) => l.expiration === farExp);
+        if (nearLegs.length === 2 && farLegs.length === 2) {
+          const nearPut = nearLegs.find((l) => l.type === "Put");
+          const nearCall = nearLegs.find((l) => l.type === "Call");
+          const farPut = farLegs.find((l) => l.type === "Put");
+          const farCall = farLegs.find((l) => l.type === "Call");
+          if (
+            nearPut?.side === "Short" &&
+            nearCall?.side === "Short" &&
+            farPut?.side === "Long" &&
+            farCall?.side === "Long"
+          ) {
+            return "Double Diagonal";
+          }
+        }
       }
     }
   }
