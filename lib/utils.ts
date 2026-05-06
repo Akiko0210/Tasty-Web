@@ -17,48 +17,23 @@ export function toLegs(
   });
 }
 
-// Builds a dxFeed option symbol from a leg. Requires expiration in YYYY-MM-DD format.
-// Returns null if the expiration can't be parsed.
-// expirationToRoot maps expiration date → actual root symbol (e.g. "SPXW" for weekly SPX options).
+// Looks up the dxFeed streamer symbol for a leg from the option chain symbol map.
 export function legToSymbol(
   leg: Leg,
-  rootSymbol = "SPX",
-  expirationToRoot?: Record<string, string>,
+  symbolMap: Record<string, { occ: string; streamer: string }>,
 ): string | null {
-  const match = leg.expiration.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return null;
-  const [, yyyy, mm, dd] = match;
   const cp = leg.type === "Call" ? "C" : "P";
-  const effectiveRoot = expirationToRoot?.[leg.expiration] ?? rootSymbol;
-  return `.${effectiveRoot}${yyyy.slice(2)}${mm}${dd}${cp}${leg.strike}`;
-}
-
-// Builds an OCC option symbol for the TastyTrade API.
-// Format: ROOT(6 chars) + YYMMDD + C/P + strike×1000 (8 digits, zero-padded)
-// Example: SPX 2026-05-15 Call 6700 → "SPX   260515C06700000"
-export function legToOccSymbol(
-  leg: Leg,
-  rootSymbol: string,
-  expirationToRoot?: Record<string, string>,
-): string {
-  const match = leg.expiration.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return "";
-  const [, yyyy, mm, dd] = match;
-  const cp = leg.type === "Call" ? "C" : "P";
-  const strikeInt = Math.round(leg.strike * 1000);
-  const effectiveRoot = expirationToRoot?.[leg.expiration] ?? rootSymbol;
-  return `${effectiveRoot.padEnd(6, " ")}${yyyy.slice(2)}${mm}${dd}${cp}${strikeInt.toString().padStart(8, "0")}`;
+  return symbolMap[`${leg.expiration}|${leg.strike}|${cp}`]?.streamer ?? null;
 }
 
 // Builds the TastyTrade API order payload from the current legs.
-// totalCost < 0 = net debit; totalCost > 0 = net credit (from calculateTotalCost).
+// netPrice < 0 = net debit; netPrice > 0 = net credit (per-share, from calculateTotalCost).
 // Throws if any leg has price === 0 (quotes not loaded yet).
 export function buildOrderPayload(
   legs: Leg[],
-  rootSymbol: string,
-  totalCost: number,
+  symbolMap: Record<string, { occ: string; streamer: string }>,
+  netPrice: number,
   tif: "Day" | "GTC" = "Day",
-  expirationToRoot?: Record<string, string>,
 ): OrderPayload {
   const unpricedCount = legs.filter((l) => l.price === 0).length;
   if (unpricedCount > 0) {
@@ -67,7 +42,6 @@ export function buildOrderPayload(
     );
   }
 
-  const netPrice = totalCost / 100; // positive = credit, negative = debit
   const priceEffect: "Credit" | "Debit" = netPrice > 0 ? "Credit" : "Debit";
 
   return {
@@ -75,18 +49,23 @@ export function buildOrderPayload(
     "order-type": "Limit",
     price: Math.abs(netPrice).toFixed(2),
     "price-effect": priceEffect,
-    legs: legs.map((leg) => ({
-      "instrument-type": "Equity Option",
-      symbol: legToOccSymbol(leg, rootSymbol, expirationToRoot),
-      quantity: leg.size,
-      action: leg.side === "Long" ? "Buy to Open" : "Sell to Open",
-    })),
+    legs: legs.map((leg) => {
+      const cp = leg.type === "Call" ? "C" : "P";
+      const symbol = symbolMap[`${leg.expiration}|${leg.strike}|${cp}`]?.occ ?? "";
+      return {
+        "instrument-type": "Equity Option",
+        symbol,
+        quantity: leg.size,
+        action: leg.side === "Long" ? "Buy to Open" : "Sell to Open",
+      };
+    }),
   };
 }
 
+// Returns per-share net price summed across legs (positive = credit, negative = debit).
 export function calculateTotalCost(legs: Leg[]): number {
   return legs.reduce((total, leg) => {
-    const cost = leg.price * leg.size * 100;
+    const cost = leg.price * leg.size;
     return total + (leg.side === "Long" ? -cost : cost);
   }, 0);
 }
@@ -95,10 +74,9 @@ export function calculateTotalCost(legs: Leg[]): number {
 export function resolveStrikeOnExpChange(
   newExp: string,
   currentStrike: number,
-  strikes: number[] | undefined,
   strikesByExpiration: Record<string, number[]> | undefined,
 ): number {
-  const newStrikes = strikesByExpiration?.[newExp] ?? strikes ?? [];
+  const newStrikes = strikesByExpiration?.[newExp] ?? [];
   if (newStrikes.includes(currentStrike)) return currentStrike;
   if (!newStrikes.length) return currentStrike;
   return newStrikes.reduce((best, s) =>
@@ -137,21 +115,31 @@ type LegTemplate = Omit<Leg, "id" | "visible" | "status" | "daysToExpiry">;
  */
 export function buildStrategyLegs(
   strategyName: string,
-  strikes: number[],
+  strikesByExpiration: Record<string, number[]>,
   expirations: string[],
   currentPrice: number | null,
 ): LegTemplate[] {
-  if (!strikes.length || !expirations.length) return [];
-
-  const price = currentPrice ?? strikes[Math.floor(strikes.length / 2)];
-  const atmIdx = findAtmIndex(strikes, price);
-  const ws = calcWingStep(strikes, atmIdx);
-
-  // Clamp-safe strike accessor by offset from ATM
-  const s = (offset: number): number =>
-    strikes[Math.max(0, Math.min(strikes.length - 1, atmIdx + offset))];
-
   const nearExp = expirations[0];
+  const nearStrikes = nearExp ? (strikesByExpiration[nearExp] ?? []) : [];
+  if (!nearStrikes.length || !expirations.length) return [];
+
+  const price = currentPrice ?? nearStrikes[Math.floor(nearStrikes.length / 2)];
+  const atmIdx = findAtmIndex(nearStrikes, price);
+  const ws = calcWingStep(nearStrikes, atmIdx);
+
+  // Clamp-safe strike accessor by offset from ATM (near-exp strikes)
+  const s = (offset: number): number =>
+    nearStrikes[Math.max(0, Math.min(nearStrikes.length - 1, atmIdx + offset))];
+
+  // Snap a target price to the closest available strike for a given expiration
+  const closestIn = (exp: string, target: number): number => {
+    const expStrikes = strikesByExpiration[exp] ?? [];
+    if (!expStrikes.length) return target;
+    return expStrikes.reduce((best, strike) =>
+      Math.abs(strike - target) < Math.abs(best - target) ? strike : best,
+    );
+  };
+
   // For strategies needing a far expiry, pick ~4 expirations out (or the last one available)
   const farExp = expirations[Math.min(3, expirations.length - 1)];
 
@@ -245,15 +233,15 @@ export function buildStrategyLegs(
     case "Calendar Spread":
       // Sell near-term ATM Call, Buy far-term ATM Call
       return [
-        leg(s(0), "Call", nearExp, "Short"),
-        leg(s(0), "Call", farExp,  "Long"),
+        leg(s(0),                    "Call", nearExp, "Short"),
+        leg(closestIn(farExp, s(0)), "Call", farExp,  "Long"),
       ];
 
     case "Diagonal Spread":
       // Sell near-term OTM Call, Buy far-term ATM Call
       return [
-        leg(s(ws), "Call", nearExp, "Short"),
-        leg(s(0),  "Call", farExp,  "Long"),
+        leg(s(ws),                   "Call", nearExp, "Short"),
+        leg(closestIn(farExp, s(0)), "Call", farExp,  "Long"),
       ];
 
     // ── Four-leg ──────────────────────────────────────────────────────────────
@@ -299,10 +287,10 @@ export function buildStrategyLegs(
       // Put diagonal + Call diagonal
       // Buy far Put A, Sell near Put B, Sell near Call C, Buy far Call D
       return [
-        leg(s(-2 * ws), "Put",  farExp,  "Long"),
-        leg(s(-ws),     "Put",  nearExp, "Short"),
-        leg(s(ws),      "Call", nearExp, "Short"),
-        leg(s(2 * ws),  "Call", farExp,  "Long"),
+        leg(closestIn(farExp, s(-2 * ws)), "Put",  farExp,  "Long"),
+        leg(s(-ws),                        "Put",  nearExp, "Short"),
+        leg(s(ws),                         "Call", nearExp, "Short"),
+        leg(closestIn(farExp, s(2 * ws)),  "Call", farExp,  "Long"),
       ];
 
     default:

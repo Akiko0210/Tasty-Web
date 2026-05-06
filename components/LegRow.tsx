@@ -17,10 +17,8 @@ interface LegRowProps {
   onRemove: () => void;
   bid?: number;
   ask?: number;
-  strikes?: number[];
   expirations?: string[];
   strikesByExpiration?: Record<string, number[]>;
-  rootSymbol?: string;
   showPriceDetails?: boolean;
 }
 
@@ -31,7 +29,7 @@ function useFixedDropdown(open: boolean) {
   const capture = useCallback(() => {
     if (buttonRef.current) {
       const r = buttonRef.current.getBoundingClientRect();
-      setPos({ top: r.bottom, left: r.left, width: r.width });
+      setPos({ top: r.top, left: r.left, width: r.width });
     }
   }, []);
 
@@ -67,7 +65,12 @@ function StrikeDropdown({
   const currentIdx = strikes.indexOf(value);
   const itemHeight = 32;
   const visibleCount = 9;
+  const centerIdx = Math.floor(visibleCount / 2);
   const maxHeight = visibleCount * itemHeight;
+  const safeIdx = Math.max(0, currentIdx);
+  const maxScrollTop = Math.max(0, strikes.length * itemHeight - maxHeight);
+  const scrollTop = Math.max(0, Math.min(maxScrollTop, (safeIdx - centerIdx) * itemHeight));
+  const dropdownTop = pos.top - (safeIdx * itemHeight - scrollTop);
 
   useEffect(() => {
     if (!open) return;
@@ -85,9 +88,9 @@ function StrikeDropdown({
 
   useLayoutEffect(() => {
     if (open && listRef.current) {
-      listRef.current.scrollTop = Math.max(0, (currentIdx - 4) * itemHeight);
+      listRef.current.scrollTop = scrollTop;
     }
-  }, [open, currentIdx, itemHeight]);
+  }, [open, scrollTop]);
 
   return (
     <div ref={containerRef} className="relative">
@@ -102,7 +105,7 @@ function StrikeDropdown({
       {open && (
         <ul
           ref={listRef}
-          style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width, maxHeight, zIndex: 9999 }}
+          style={{ position: "fixed", top: dropdownTop, left: pos.left, width: pos.width, maxHeight, zIndex: 9999 }}
           className="overflow-y-auto rounded-lg border-2 border-blue-500 bg-white shadow-xl ring-2 ring-blue-500/20 dark:border-blue-400 dark:bg-black dark:ring-blue-400/20"
         >
           {strikes.map((strike) => (
@@ -143,7 +146,12 @@ function ExpirationDropdown({
   const currentIdx = expirations.indexOf(value);
   const itemHeight = 32;
   const visibleCount = 9;
+  const centerIdx = Math.floor(visibleCount / 2);
   const maxHeight = visibleCount * itemHeight;
+  const safeIdx = Math.max(0, currentIdx);
+  const maxScrollTop = Math.max(0, expirations.length * itemHeight - maxHeight);
+  const scrollTop = Math.max(0, Math.min(maxScrollTop, (safeIdx - centerIdx) * itemHeight));
+  const dropdownTop = pos.top - (safeIdx * itemHeight - scrollTop);
 
   useEffect(() => {
     if (!open) return;
@@ -161,9 +169,9 @@ function ExpirationDropdown({
 
   useLayoutEffect(() => {
     if (open && listRef.current) {
-      listRef.current.scrollTop = Math.max(0, (currentIdx - 4) * itemHeight);
+      listRef.current.scrollTop = scrollTop;
     }
-  }, [open, currentIdx, itemHeight]);
+  }, [open, scrollTop]);
 
   return (
     <div ref={containerRef} className="relative">
@@ -178,7 +186,7 @@ function ExpirationDropdown({
       {open && (
         <ul
           ref={listRef}
-          style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width, maxHeight, zIndex: 9999 }}
+          style={{ position: "fixed", top: dropdownTop, left: pos.left, width: pos.width, maxHeight, zIndex: 9999 }}
           className="overflow-y-auto rounded-lg border-2 border-blue-500 bg-white shadow-xl ring-2 ring-blue-500/20 dark:border-blue-400 dark:bg-black dark:ring-blue-400/20"
         >
           {expirations.map((exp) => (
@@ -202,15 +210,11 @@ function ExpirationDropdown({
   );
 }
 
-// Shared helper: resolve strikes for a leg's current expiration
 function useStrikesForExp(
   leg: LegRowProps["leg"],
-  strikes: LegRowProps["strikes"],
   strikesByExpiration: LegRowProps["strikesByExpiration"],
 ) {
-  return strikesByExpiration && leg.expiration
-    ? (strikesByExpiration[leg.expiration] ?? strikes ?? [])
-    : (strikes ?? []);
+  return (leg.expiration ? strikesByExpiration?.[leg.expiration] : undefined) ?? [];
 }
 
 // ── Side / type button styles ─────────────────────────────────────────────────
@@ -233,12 +237,11 @@ export function LegRow({
   onRemove,
   bid,
   ask,
-  strikes,
   expirations,
   strikesByExpiration,
   showPriceDetails = false,
 }: LegRowProps) {
-  const strikesForExp = useStrikesForExp(leg, strikes, strikesByExpiration);
+  const strikesForExp = useStrikesForExp(leg, strikesByExpiration);
 
   return (
     <tr className="border-b border-black/30 dark:border-white/30">
@@ -257,7 +260,7 @@ export function LegRow({
       <td className="px-4 py-2">
         <ExpirationDropdown
           value={leg.expiration}
-          onChange={(exp) => onUpdate({ expiration: exp, strike: resolveStrikeOnExpChange(exp, leg.strike, strikes, strikesByExpiration) })}
+          onChange={(exp) => onUpdate({ expiration: exp, strike: resolveStrikeOnExpChange(exp, leg.strike, strikesByExpiration) })}
           expirations={expirations}
         />
       </td>
@@ -303,12 +306,11 @@ export function LegCard({
   onRemove,
   bid,
   ask,
-  strikes,
   expirations,
   strikesByExpiration,
   showPriceDetails = false,
 }: LegRowProps) {
-  const strikesForExp = useStrikesForExp(leg, strikes, strikesByExpiration);
+  const strikesForExp = useStrikesForExp(leg, strikesByExpiration);
 
   if (!showPriceDetails) {
     // ── Collapsed: single row ──────────────────────────────────────────────
@@ -335,7 +337,7 @@ export function LegCard({
         />
         <ExpirationDropdown
           value={leg.expiration}
-          onChange={(exp) => onUpdate({ expiration: exp, strike: resolveStrikeOnExpChange(exp, leg.strike, strikes, strikesByExpiration) })}
+          onChange={(exp) => onUpdate({ expiration: exp, strike: resolveStrikeOnExpChange(exp, leg.strike, strikesByExpiration) })}
           expirations={expirations}
         />
         <input
@@ -406,7 +408,7 @@ export function LegCard({
           <span className="text-xs font-bold uppercase tracking-wider opacity-50">Expiry</span>
           <ExpirationDropdown
             value={leg.expiration}
-            onChange={(exp) => onUpdate({ expiration: exp, strike: resolveStrikeOnExpChange(exp, leg.strike, strikes, strikesByExpiration) })}
+            onChange={(exp) => onUpdate({ expiration: exp, strike: resolveStrikeOnExpChange(exp, leg.strike, strikesByExpiration) })}
             expirations={expirations}
           />
         </div>

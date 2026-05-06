@@ -45,10 +45,9 @@ export default function StrategyPanel() {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const chain = chainCache[selectedSymbol];
-  const realStrikes = chain?.strikes ?? [];
   const chainExpirations = chain?.expirations ?? [];
   const strikesByExpiration = chain?.strikesByExpiration ?? {};
-  const expirationToRoot = chain?.expirationToRoot ?? {};
+  const symbolMap = chain?.symbolMap ?? {};
   const optionChainStatus = chain?.status ?? "loading";
   const optionChainError = chain?.error ?? null;
 
@@ -66,30 +65,30 @@ export default function StrategyPanel() {
     setOrderPriceOverride(null);
   }, [strategyKey]);
 
-  // Total bid/ask across all legs (NaN if any quote is missing)
-  const totalBidDollars = legs.reduce((sum, leg) => {
-    const sym = legToSymbol(leg, selectedSymbol, expirationToRoot);
+  // Per-share bid/ask/mid net across all legs (NaN if any quote is missing)
+  const totalBid = legs.reduce((sum, leg) => {
+    const sym = legToSymbol(leg, symbolMap);
     const q = sym ? quotes[sym] : undefined;
     if (!q) return NaN;
-    const c = q.bid * leg.size * 100;
+    const c = q.bid * leg.size;
     return sum + (leg.side === "Long" ? -c : c);
   }, 0);
-  const totalAskDollars = legs.reduce((sum, leg) => {
-    const sym = legToSymbol(leg, selectedSymbol, expirationToRoot);
+  const totalAsk = legs.reduce((sum, leg) => {
+    const sym = legToSymbol(leg, symbolMap);
     const q = sym ? quotes[sym] : undefined;
     if (!q) return NaN;
-    const c = q.ask * leg.size * 100;
+    const c = q.ask * leg.size;
     return sum + (leg.side === "Long" ? -c : c);
   }, 0);
 
-  const totalMidDollars = isNaN(totalBidDollars) || isNaN(totalAskDollars)
+  const totalMid = isNaN(totalBid) || isNaN(totalAsk)
     ? NaN
-    : (totalBidDollars + totalAskDollars) / 2;
+    : (totalBid + totalAsk) / 2;
 
   // Direction (credit/debit) is fixed by mid price; user only types the magnitude.
-  const directionSign = isNaN(totalMidDollars)
+  const directionSign = isNaN(totalMid)
     ? (totalCost >= 0 ? 1 : -1)
-    : (totalMidDollars >= 0 ? 1 : -1);
+    : (totalMid >= 0 ? 1 : -1);
 
   const parsedOverride = orderPriceOverride !== null ? parseFloat(orderPriceOverride) : NaN;
   const effectiveTotalCost = isNaN(parsedOverride)
@@ -101,9 +100,9 @@ export default function StrategyPanel() {
   const currentPrice = underlyingQuote?.last ?? null;
 
   const legSymbols = useMemo(
-    () => legs.flatMap((leg) => { const sym = legToSymbol(leg, selectedSymbol, expirationToRoot); return sym ? [sym] : []; }),
+    () => legs.flatMap((leg) => { const sym = legToSymbol(leg, symbolMap); return sym ? [sym] : []; }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [legs.map((l) => legToSymbol(l, selectedSymbol)).join(",")],
+    [legs.map((l) => legToSymbol(l, symbolMap)).join(",")],
   );
 
   useEffect(() => {
@@ -117,7 +116,7 @@ export default function StrategyPanel() {
         const newLegs = toLegs(
           buildStrategyLegs(
             strategyConfigs[selected!].name,
-            realStrikes,
+            strikesByExpiration,
             chainExpirations,
             currentPrice,
           ),
@@ -125,7 +124,7 @@ export default function StrategyPanel() {
         return { ...prev, [strategyKey]: newLegs };
       });
     }
-  }, [strategyKey, optionChainStatus, realStrikes, chainExpirations]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [strategyKey, optionChainStatus, strikesByExpiration, chainExpirations]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fill in mid price for legs that haven't been priced yet
   useEffect(() => {
@@ -136,7 +135,7 @@ export default function StrategyPanel() {
       let changed = false;
       const updated = list.map((leg) => {
         if (leg.price !== 0) return leg;
-        const sym = legToSymbol(leg, selectedSymbol, expirationToRoot);
+        const sym = legToSymbol(leg, symbolMap);
         const quote = sym ? quotes[sym] : undefined;
         if (!quote) return leg;
         const mid = (quote.bid + quote.ask) / 2;
@@ -206,7 +205,7 @@ export default function StrategyPanel() {
               return { ...l, ...updates };
             }
             // Sync expiration and resolve the closest strike for every other leg.
-            const newStrike = resolveStrikeOnExpChange(newExp, l.strike, realStrikes, strikesByExpiration);
+            const newStrike = resolveStrikeOnExpChange(newExp, l.strike, strikesByExpiration);
             return { ...l, expiration: newExp, strike: newStrike };
           }),
         };
@@ -230,12 +229,13 @@ export default function StrategyPanel() {
     if (!strategyKey) return;
     const list = legsByStrategy[strategyKey] ?? [];
     const last = list[list.length - 1];
+    const nearStrikes = strikesByExpiration[chainExpirations[0]] ?? [];
     const atmStrike =
-      realStrikes.length && currentPrice != null
-        ? realStrikes.reduce((best, s) =>
+      nearStrikes.length && currentPrice != null
+        ? nearStrikes.reduce((best, s) =>
             Math.abs(s - currentPrice) < Math.abs(best - currentPrice) ? s : best,
           )
-        : (realStrikes[Math.floor(realStrikes.length / 2)] ?? 0);
+        : (nearStrikes[Math.floor(nearStrikes.length / 2)] ?? 0);
     const base = last
       ? { ...last, strike: last.strike + 2, price: Math.max(0.5, last.price - 0.5) }
       : {
@@ -264,7 +264,7 @@ export default function StrategyPanel() {
     setDryRunError(null);
     setIsDryRunning(true);
     try {
-      const payload = buildOrderPayload(legs, selectedSymbol, effectiveTotalCost, tif, expirationToRoot);
+      const payload = buildOrderPayload(legs, symbolMap, effectiveTotalCost, tif);
       const dryRun = await dryRunOrder(payload);
       const order: Order = {
         id: `order-${Math.random().toString(36).substring(2, 9)}-${Date.now()}`,
@@ -275,7 +275,7 @@ export default function StrategyPanel() {
         tif,
         legs: legs.map((l) => ({ ...l, daysToExpiry: l.daysToExpiry ?? 16 })),
         createdAt: new Date(),
-        totalCost: effectiveTotalCost,
+        totalCost: effectiveTotalCost * 100,
       };
       setPendingOrder({ order, payload, dryRun });
     } catch (err) {
@@ -374,9 +374,9 @@ export default function StrategyPanel() {
         {/* ── Bid / Mid / Ask — always visible, above legs ──────────────────── */}
         <div className="flex items-start justify-center gap-8 border-b-2 border-black/10 px-4 py-3 dark:border-white/10">
           {[
-            { label: "Bid", val: totalBidDollars },
-            { label: "Mid", val: totalMidDollars },
-            { label: "Ask", val: totalAskDollars },
+            { label: "Bid", val: totalBid },
+            { label: "Mid", val: totalMid },
+            { label: "Ask", val: totalAsk },
           ].map(({ label, val }) => (
             <div key={label} className="flex flex-col items-center gap-0">
               <span className="text-xs font-bold uppercase tracking-wider opacity-50">{label}</span>
@@ -402,7 +402,7 @@ export default function StrategyPanel() {
             </div>
           )}
           {legs.map((leg) => {
-            const sym = legToSymbol(leg, selectedSymbol, expirationToRoot);
+            const sym = legToSymbol(leg, symbolMap);
             const quote = sym ? quotes[sym] : undefined;
             return (
               <LegCard
@@ -412,10 +412,8 @@ export default function StrategyPanel() {
                 onRemove={() => removeLeg(leg.id)}
                 bid={quote?.bid}
                 ask={quote?.ask}
-                strikes={realStrikes}
                 expirations={chainExpirations}
                 strikesByExpiration={strikesByExpiration}
-                rootSymbol={selectedSymbol}
                 showPriceDetails={showLegPrices}
               />
             );
@@ -449,7 +447,7 @@ export default function StrategyPanel() {
             </thead>
             <tbody>
               {legs.map((leg) => {
-                const sym = legToSymbol(leg, selectedSymbol, expirationToRoot);
+                const sym = legToSymbol(leg, symbolMap);
                 const quote = sym ? quotes[sym] : undefined;
                 return (
                   <LegRow
@@ -459,11 +457,9 @@ export default function StrategyPanel() {
                     onRemove={() => removeLeg(leg.id)}
                     bid={quote?.bid}
                     ask={quote?.ask}
-                    strikes={realStrikes}
                     expirations={chainExpirations}
                     strikesByExpiration={strikesByExpiration}
-                    rootSymbol={selectedSymbol}
-                    showPriceDetails={showLegPrices}
+                        showPriceDetails={showLegPrices}
                   />
                 );
               })}

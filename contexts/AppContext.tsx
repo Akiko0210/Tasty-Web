@@ -175,10 +175,9 @@ function useQuoteStream(symbols: string[]): Record<string, Quote> {
 // ---------- Context types ----------
 
 export interface ChainData {
-  strikes: number[];
   expirations: string[];
   strikesByExpiration: Record<string, number[]>;
-  expirationToRoot: Record<string, string>;
+  symbolMap: Record<string, { occ: string; streamer: string }>;
   status: "loading" | "ready" | "error";
   error: string | null;
 }
@@ -241,14 +240,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const fetchOptionChainForSymbol = useCallback((symbol: string) => {
     setChainCache((prev) => {
       if (prev[symbol]?.status === "ready") return prev;
-      return { ...prev, [symbol]: { strikes: [], expirations: [], strikesByExpiration: {}, expirationToRoot: {}, status: "loading", error: null } };
+      return { ...prev, [symbol]: { expirations: [], strikesByExpiration: {}, symbolMap: {}, status: "loading", error: null } };
     });
 
     getOptionChain(symbol)
-      .then(({ strikes, expirations, strikesByExpiration, expirationToRoot }) => {
+      .then(({ expirations, strikesByExpiration, symbolMap }) => {
         setChainCache((prev) => ({
           ...prev,
-          [symbol]: { strikes, expirations, strikesByExpiration, expirationToRoot, status: "ready", error: null },
+          [symbol]: { expirations, strikesByExpiration, symbolMap, status: "ready", error: null },
         }));
       })
       .catch((e) => {
