@@ -24,7 +24,7 @@ export interface Order {
   strategyName: string;
   status: string;
   legs: Leg[];
-  createdAt: Date;
+  updatedAt: Date;
   totalCost: number;
   orderNumber: string;
   tif: string;

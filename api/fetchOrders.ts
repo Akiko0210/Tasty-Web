@@ -10,6 +10,19 @@ export interface FetchOrdersParams {
 }
 const DEFAULT_ACCOUNT = process.env.TASTYWORKS_ACCOUNT_ID;
 
+// Tastytrade interprets `start-date` / `end-date` in its own timezone, which
+// can drop boundary-day orders for callers in other regions. Widen the window
+// by one day on each side; callers are expected to trim to their exact local
+// boundary on the client.
+function shiftDate(yyyyMmDd: string, deltaDays: number): string {
+  const [y, m, d] = yyyyMmDd.split("-").map(Number);
+  const shifted = new Date(y, m - 1, d + deltaDays);
+  const yy = shifted.getFullYear();
+  const mm = String(shifted.getMonth() + 1).padStart(2, "0");
+  const dd = String(shifted.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
 export async function fetchOrders({
   startDate,
   endDate,
@@ -21,7 +34,9 @@ export async function fetchOrders({
       "No access token: check REFRESH_TOKEN / CLIENT_SECRET and OAuth response.",
     );
   }
-  const url = `${process.env.TASTY_BASE_URL}/accounts/${accountId}/orders?start-date=${startDate}&end-date=${endDate}`;
+  const queryStart = shiftDate(startDate, -1);
+  const queryEnd = shiftDate(endDate, 1);
+  const url = `${process.env.TASTY_BASE_URL}/accounts/${accountId}/orders?start-date=${queryStart}&end-date=${queryEnd}`;
   const res = await fetch(url, {
     method: "GET",
     headers: {
@@ -53,7 +68,7 @@ interface RawOrder {
   status: string;
   price: string;
   "price-effect": string;
-  "received-at": string;
+  "terminal-at": string;
   "time-in-force": string;
   "leg-count": number;
   size: number;
@@ -266,7 +281,7 @@ export async function mapTastyworksResponseToOrders(
       tif: o["time-in-force"],
       totalCost: isCredit ? -price : price,
       profitLoss: undefined,
-      createdAt: new Date(o["received-at"]),
+      updatedAt: new Date(o["terminal-at"]),
       legs,
     };
   });

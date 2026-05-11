@@ -274,7 +274,7 @@ export default function StrategyPanel() {
         orderNumber: `#${Math.floor(100000000 + Math.random() * 900000000)}`,
         tif,
         legs: legs.map((l) => ({ ...l, daysToExpiry: l.daysToExpiry ?? 16 })),
-        createdAt: new Date(),
+        updatedAt: new Date(),
         totalCost: effectiveTotalCost * 100,
       };
       setPendingOrder({ order, payload, dryRun });

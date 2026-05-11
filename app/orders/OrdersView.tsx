@@ -59,7 +59,7 @@ function OrderCard({ order, mounted }: { order: Order; mounted: boolean }) {
         <span className="opacity-50">·</span>
         <span className="font-mono text-xs opacity-60">
           {mounted
-            ? order.createdAt.toLocaleString("en-US", {
+            ? order.updatedAt.toLocaleString("en-US", {
                 month: "numeric",
                 day: "2-digit",
                 hour: "2-digit",
@@ -140,11 +140,15 @@ export default function OrdersView() {
     if (statusFilter !== "All" && order.status !== statusFilter) return false;
     const sym = symbolFilter.trim().toUpperCase();
     if (sym && !order.symbol.toUpperCase().includes(sym)) return false;
-    if (dateStart && order.createdAt < new Date(dateStart)) return false;
+    if (dateStart) {
+      const [y, m, d] = dateStart.split("-").map(Number);
+      const start = new Date(y, m - 1, d, 0, 0, 0, 0);
+      if (order.updatedAt < start) return false;
+    }
     if (dateEnd) {
-      const end = new Date(dateEnd);
-      end.setHours(23, 59, 59, 999);
-      if (order.createdAt > end) return false;
+      const [y, m, d] = dateEnd.split("-").map(Number);
+      const end = new Date(y, m - 1, d, 23, 59, 59, 999);
+      if (order.updatedAt > end) return false;
     }
     return true;
   });
@@ -294,7 +298,7 @@ export default function OrdersView() {
                         <td className="px-2 py-2 text-sm sm:px-4">{order.tif}</td>
                         <td className="px-2 py-2 text-xs sm:px-4">
                           {mounted
-                            ? order.createdAt.toLocaleString("en-US", {
+                            ? order.updatedAt.toLocaleString("en-US", {
                                 month: "numeric",
                                 day: "2-digit",
                                 hour: "2-digit",
