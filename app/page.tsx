@@ -91,8 +91,9 @@ export default function StrategyPanel() {
     : (totalMid >= 0 ? 1 : -1);
 
   const parsedOverride = orderPriceOverride !== null ? parseFloat(orderPriceOverride) : NaN;
+  const basePrice = !isNaN(totalMid) ? totalMid : totalCost;
   const effectiveTotalCost = isNaN(parsedOverride)
-    ? totalCost
+    ? basePrice
     : directionSign * Math.abs(parsedOverride);
 
   const underlyingQuoteSymbol = UNDERLYING_QUOTE_SYMBOL[selectedSymbol];
@@ -189,6 +190,7 @@ export default function StrategyPanel() {
 
   function updateLeg(legId: string, updates: Partial<Leg>) {
     if (!strategyKey || selected === null) return;
+    setOrderPriceOverride(null);
     const strategyName = strategyConfigs[selected].name;
     const syncExpiry =
       updates.expiration !== undefined && !MULTI_EXPIRY_STRATEGIES.has(strategyName);
@@ -219,6 +221,7 @@ export default function StrategyPanel() {
 
   function removeLeg(legId: string) {
     if (!strategyKey) return;
+    setOrderPriceOverride(null);
     setLegsByStrategy((prev) => {
       const list = (prev[strategyKey] ?? []).filter((l) => l.id !== legId);
       return { ...prev, [strategyKey]: list };
@@ -227,6 +230,7 @@ export default function StrategyPanel() {
 
   function addPosition() {
     if (!strategyKey) return;
+    setOrderPriceOverride(null);
     const list = legsByStrategy[strategyKey] ?? [];
     const last = list[list.length - 1];
     const nearStrikes = strikesByExpiration[chainExpirations[0]] ?? [];
