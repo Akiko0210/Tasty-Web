@@ -52,13 +52,17 @@ export default function StrategyPanel() {
   const optionChainStatus = chain?.status ?? "loading";
   const optionChainError = chain?.error ?? null;
 
-  // Futures contract selector
+  // Futures contract selector — show only the 4 nearest unexpired contracts
   const futuresContracts: FuturesContract[] = chain?.futuresContracts ?? [];
   const expirationToContract = chain?.expirationToContract ?? {};
+  const today = new Date().toISOString().slice(0, 10);
+  const upcomingContracts = futuresContracts
+    .filter((c) => c.expirationDate >= today)
+    .slice(0, 4);
   const activeContract =
     selectedContract ??
     futuresContracts.find((c) => c.isActive)?.symbol ??
-    (futuresContracts[0]?.symbol ?? null);
+    (upcomingContracts[0]?.symbol ?? null);
 
   // For futures: filter expirations to those settling into the selected contract
   const chainExpirations = useMemo(() => {
@@ -391,9 +395,9 @@ export default function StrategyPanel() {
       </div>
 
       {/* Contract selector — own row so it doesn't crowd the symbol/price on mobile */}
-      {FUTURES_SYMBOLS.has(selectedSymbol) && futuresContracts.length > 0 && (
+      {FUTURES_SYMBOLS.has(selectedSymbol) && upcomingContracts.length > 0 && (
         <div className="mx-auto mb-2 w-full max-w-4xl flex flex-wrap items-center gap-1.5 sm:mb-3">
-          {futuresContracts.map((contract) => (
+          {upcomingContracts.map((contract) => (
             <button
               key={contract.symbol}
               type="button"

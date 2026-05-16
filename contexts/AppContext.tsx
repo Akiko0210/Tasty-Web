@@ -136,7 +136,7 @@ function useQuoteStream(symbols: string[]): Record<string, Quote> {
               const next = { ...prev };
               for (let i = 0; i < values.length; i += 3) {
                 const sym = values[i] as string;
-                next[sym] = { ...prev[sym], bid: values[i + 1] as number, ask: values[i + 2] as number };
+                next[sym] = { ...prev[sym], bid: Number(values[i + 1]), ask: Number(values[i + 2]) };
               }
               return next;
             });
@@ -145,7 +145,7 @@ function useQuoteStream(symbols: string[]): Record<string, Quote> {
               const next = { ...prev };
               for (let i = 0; i < values.length; i += 2) {
                 const sym = values[i] as string;
-                next[sym] = { ...prev[sym], bid: prev[sym]?.bid ?? 0, ask: prev[sym]?.ask ?? 0, last: values[i + 1] as number };
+                next[sym] = { ...prev[sym], bid: prev[sym]?.bid ?? 0, ask: prev[sym]?.ask ?? 0, last: Number(values[i + 1]) };
               }
               return next;
             });
