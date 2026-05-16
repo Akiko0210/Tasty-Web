@@ -319,14 +319,14 @@ export function LegCard({
         <button
           type="button"
           onClick={() => onUpdate({ side: leg.side === "Short" ? "Long" : "Short" })}
-          className={sideClass(leg.side)}
+          className={`w-13 shrink-0 text-center ${sideClass(leg.side)}`}
         >
           {leg.side}
         </button>
         <button
           type="button"
           onClick={() => onUpdate({ type: leg.type === "Call" ? "Put" : "Call" })}
-          className={typeClass}
+          className={`w-11 shrink-0 text-center ${typeClass}`}
         >
           {leg.type}
         </button>

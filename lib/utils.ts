@@ -51,10 +51,10 @@ export function buildOrderPayload(
     "price-effect": priceEffect,
     legs: legs.map((leg) => {
       const cp = leg.type === "Call" ? "C" : "P";
-      const symbol = symbolMap[`${leg.expiration}|${leg.strike}|${cp}`]?.occ ?? "";
+      const occ = symbolMap[`${leg.expiration}|${leg.strike}|${cp}`]?.occ ?? "";
       return {
-        "instrument-type": "Equity Option",
-        symbol,
+        "instrument-type": occ.startsWith("./") ? "Future Option" : "Equity Option",
+        symbol: occ,
         quantity: leg.size,
         action: leg.side === "Long" ? "Buy to Open" : "Sell to Open",
       };

@@ -2,6 +2,11 @@
 
 import type { Order, DryRunResult } from "@/lib/types";
 
+const shortDate = (iso: string) => {
+  const d = new Date(iso + "T00:00:00");
+  return isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+};
+
 interface OrderConfirmModalProps {
   order: Order;
   dryRun: DryRunResult;
@@ -62,8 +67,8 @@ export function OrderConfirmModal({
           </div>
         </div>
 
-        {/* Legs table — scrollable if many legs */}
-        <div className="overflow-y-auto px-5 py-3">
+        {/* Legs table — scrollable if many legs or narrow screen */}
+        <div className="overflow-x-auto overflow-y-auto px-5 py-3">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-black/20 dark:border-white/20">
@@ -106,7 +111,7 @@ export function OrderConfirmModal({
                   </td>
                   <td className="py-2 font-medium">{leg.type}</td>
                   <td className="py-2 text-right font-mono font-bold">{leg.strike}</td>
-                  <td className="py-2 pl-4 font-mono text-xs opacity-60">{leg.expiration}</td>
+                  <td className="py-2 pl-4 font-mono text-xs opacity-60">{shortDate(leg.expiration)}</td>
                   <td className="py-2 text-right font-mono">×{leg.size}</td>
                   <td className="py-2 text-right font-mono">
                     {leg.price > 0 ? leg.price.toFixed(2) : "—"}

@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useMemo } from "react";
 import type { Leg, Order, OptionType, Side } from "@/lib/types";
-import { strategyConfigs, SYMBOLS, UNDERLYING_QUOTE_SYMBOL } from "@/lib/constants";
+import { strategyConfigs, SYMBOLS, UNDERLYING_QUOTE_SYMBOL, FUTURES_SYMBOLS, FUTURES_MULTIPLIER } from "@/lib/constants";
 import { toLegs, calculateTotalCost, legToSymbol, buildStrategyLegs, buildOrderPayload, resolveStrikeOnExpChange } from "@/lib/utils";
 import { useApp } from "@/contexts/AppContext";
+import type { FuturesContract } from "@/contexts/AppContext";
 import type { Symbol } from "@/lib/constants";
 import { MULTI_EXPIRY_STRATEGIES } from "@/lib/constants";
 import type { OrderPayload, DryRunResult } from "@/lib/types";
@@ -26,6 +27,7 @@ export default function StrategyPanel() {
   } = useApp();
 
   const [selectedSymbol, setSelectedSymbol] = useState<Symbol>(SYMBOLS[0]);
+  const [selectedContract, setSelectedContract] = useState<string | null>(null);
   const [legsByStrategy, setLegsByStrategy] = useState<Record<string, Leg[]>>({});
   const [dropdownOpen, setDropdownOpen] = useState<boolean>(false);
   const [symbolDropdownOpen, setSymbolDropdownOpen] = useState<boolean>(false);
@@ -45,24 +47,51 @@ export default function StrategyPanel() {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const chain = chainCache[selectedSymbol];
-  const chainExpirations = chain?.expirations ?? [];
   const strikesByExpiration = chain?.strikesByExpiration ?? {};
   const symbolMap = chain?.symbolMap ?? {};
   const optionChainStatus = chain?.status ?? "loading";
   const optionChainError = chain?.error ?? null;
+
+  // Futures contract selector
+  const futuresContracts: FuturesContract[] = chain?.futuresContracts ?? [];
+  const expirationToContract = chain?.expirationToContract ?? {};
+  const activeContract =
+    selectedContract ??
+    futuresContracts.find((c) => c.isActive)?.symbol ??
+    (futuresContracts[0]?.symbol ?? null);
+
+  // For futures: filter expirations to those settling into the selected contract
+  const chainExpirations = useMemo(() => {
+    const all = chain?.expirations ?? [];
+    if (!FUTURES_SYMBOLS.has(selectedSymbol) || !activeContract) return all;
+    return all.filter((exp) => expirationToContract[exp] === activeContract);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chain?.expirations, selectedSymbol, activeContract, expirationToContract]);
+
+  // For futures: use selected contract's streamer symbol for the underlying quote
+  const selectedContractData = futuresContracts.find((c) => c.symbol === activeContract);
 
   // Fetch chain for selected symbol (no-op if already cached)
   useEffect(() => {
     fetchOptionChainForSymbol(selectedSymbol);
   }, [selectedSymbol, fetchOptionChainForSymbol]);
 
-  const strategyKey = selected !== null ? `${selectedSymbol}-${selected}` : null;
+  // Reset contract selection when switching symbols
+  useEffect(() => {
+    setSelectedContract(null);
+  }, [selectedSymbol]);
+
+  const strategyKey =
+    selected !== null
+      ? `${selectedSymbol}-${activeContract ?? ""}-${selected}`
+      : null;
   const legs = strategyKey ? (legsByStrategy[strategyKey] ?? []) : [];
   const totalCost = calculateTotalCost(legs);
 
-  // Reset price override when switching strategies
+  // Reset price override and dry-run error when switching strategies or symbols
   useEffect(() => {
     setOrderPriceOverride(null);
+    setDryRunError(null);
   }, [strategyKey]);
 
   // Per-share bid/ask/mid net across all legs (NaN if any quote is missing)
@@ -96,7 +125,10 @@ export default function StrategyPanel() {
     ? basePrice
     : directionSign * Math.abs(parsedOverride);
 
-  const underlyingQuoteSymbol = UNDERLYING_QUOTE_SYMBOL[selectedSymbol];
+  const underlyingQuoteSymbol =
+    selectedContractData?.streamerSymbol ??
+    chain?.underlyingStreamerSymbol ??
+    UNDERLYING_QUOTE_SYMBOL[selectedSymbol];
   const underlyingQuote = quotes[underlyingQuoteSymbol];
   const currentPrice = underlyingQuote?.last ?? null;
 
@@ -191,6 +223,7 @@ export default function StrategyPanel() {
   function updateLeg(legId: string, updates: Partial<Leg>) {
     if (!strategyKey || selected === null) return;
     setOrderPriceOverride(null);
+    setDryRunError(null);
     const strategyName = strategyConfigs[selected].name;
     const syncExpiry =
       updates.expiration !== undefined && !MULTI_EXPIRY_STRATEGIES.has(strategyName);
@@ -222,6 +255,7 @@ export default function StrategyPanel() {
   function removeLeg(legId: string) {
     if (!strategyKey) return;
     setOrderPriceOverride(null);
+    setDryRunError(null);
     setLegsByStrategy((prev) => {
       const list = (prev[strategyKey] ?? []).filter((l) => l.id !== legId);
       return { ...prev, [strategyKey]: list };
@@ -231,6 +265,7 @@ export default function StrategyPanel() {
   function addPosition() {
     if (!strategyKey) return;
     setOrderPriceOverride(null);
+    setDryRunError(null);
     const list = legsByStrategy[strategyKey] ?? [];
     const last = list[list.length - 1];
     const nearStrikes = strikesByExpiration[chainExpirations[0]] ?? [];
@@ -279,7 +314,7 @@ export default function StrategyPanel() {
         tif,
         legs: legs.map((l) => ({ ...l, daysToExpiry: l.daysToExpiry ?? 16 })),
         updatedAt: new Date(),
-        totalCost: effectiveTotalCost * 100,
+        totalCost: effectiveTotalCost * (FUTURES_MULTIPLIER[selectedSymbol] ?? 100),
       };
       setPendingOrder({ order, payload, dryRun });
     } catch (err) {
@@ -318,7 +353,7 @@ export default function StrategyPanel() {
     )}
     <div className="p-3 sm:p-6">
       {/* Symbol selector + price — above the card */}
-      <div className="mx-auto mb-2 w-full max-w-4xl flex items-center gap-3 sm:mb-3">
+      <div className="mx-auto mb-1 w-full max-w-4xl flex items-center gap-3">
         <div className="relative inline-block">
           <button
             type="button"
@@ -354,6 +389,26 @@ export default function StrategyPanel() {
           {currentPrice != null ? currentPrice.toFixed(2) : "—"}
         </span>
       </div>
+
+      {/* Contract selector — own row so it doesn't crowd the symbol/price on mobile */}
+      {FUTURES_SYMBOLS.has(selectedSymbol) && futuresContracts.length > 0 && (
+        <div className="mx-auto mb-2 w-full max-w-4xl flex flex-wrap items-center gap-1.5 sm:mb-3">
+          {futuresContracts.map((contract) => (
+            <button
+              key={contract.symbol}
+              type="button"
+              onClick={() => setSelectedContract(contract.symbol)}
+              className={`min-h-10 touch-manipulation rounded border-2 px-3 py-2 text-xs font-bold transition ${
+                activeContract === contract.symbol
+                  ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
+                  : "border-black/30 hover:border-black dark:border-white/30 dark:hover:border-white"
+              }`}
+            >
+              {contract.displayName}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="mx-auto w-full max-w-4xl rounded-xl border-2 border-black bg-white shadow-lg dark:border-white dark:bg-black">
         <header className="flex items-center justify-between border-b-2 border-black px-4 py-3 dark:border-white">
@@ -398,8 +453,8 @@ export default function StrategyPanel() {
         <div className="sm:hidden divide-y-2 divide-black/10 dark:divide-white/10">
           {!showLegPrices && legs.length > 0 && (
             <div className="flex items-center gap-1.5 overflow-x-auto border-b border-black/10 px-3 py-1 dark:border-white/10">
-              <span className="w-[52px] shrink-0 text-center text-xs font-bold uppercase tracking-wider opacity-40">S/L</span>
-              <span className="w-[44px] shrink-0 text-center text-xs font-bold uppercase tracking-wider opacity-40">Type</span>
+              <span className="w-13 shrink-0 text-center text-xs font-bold uppercase tracking-wider opacity-40">S/L</span>
+              <span className="w-11 shrink-0 text-center text-xs font-bold uppercase tracking-wider opacity-40">Type</span>
               <span className="w-20 shrink-0 text-center text-xs font-bold uppercase tracking-wider opacity-40">Strike</span>
               <span className="w-20 shrink-0 text-center text-xs font-bold uppercase tracking-wider opacity-40">Expiry</span>
               <span className="w-12 shrink-0 text-center text-xs font-bold uppercase tracking-wider opacity-40">Size</span>
@@ -426,7 +481,7 @@ export default function StrategyPanel() {
 
         {/* ── Desktop table (sm+) ──────────────────────────────────────────── */}
         <div className="hidden sm:block overflow-x-auto">
-          <table className="w-full min-w-[560px]">
+          <table className="w-full min-w-140">
             <thead>
               <tr className="border-b-2 border-black text-left text-xs font-bold uppercase tracking-wider dark:border-white">
                 <th className="px-4 py-3">Strike</th>
@@ -480,7 +535,7 @@ export default function StrategyPanel() {
             </div>
           )}
           {/* Limit price — left-aligned, above action buttons */}
-          <div className="mb-3 flex items-center gap-2">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
             <span className="text-xs font-bold uppercase tracking-wider opacity-50">Limit price</span>
             <input
               type="number"
@@ -495,6 +550,11 @@ export default function StrategyPanel() {
               className="w-28 rounded border-2 border-black px-2 py-1 text-sm font-bold bg-white dark:border-white dark:bg-black"
             />
             <span className="text-xs font-bold opacity-50">{directionSign >= 0 ? "cr" : "db"}</span>
+            {FUTURES_SYMBOLS.has(selectedSymbol) && (
+              <span className="text-xs font-bold opacity-40">
+                × ${FUTURES_MULTIPLIER[selectedSymbol]}/pt
+              </span>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button

@@ -1,12 +1,29 @@
 import type { StrategyConfig } from "./types";
 
-export const SYMBOLS = ["SPX", "AAPL"] as const;
+export const SYMBOLS = ["SPX", "AAPL", "/ES", "/MES"] as const;
 export type Symbol = (typeof SYMBOLS)[number];
 
-// dxFeed quote symbol for each underlying (both are plain tickers, confirmed via API)
+export const FUTURES_SYMBOLS = new Set<string>(["/ES", "/MES"]);
+
+// Maps futures symbol to CME product code used in the chain and instruments API
+export const FUTURES_PRODUCT_CODE: Record<string, string> = {
+  "/ES": "ES",
+  "/MES": "MES",
+};
+
+// Dollar value per 1-point move per contract (ES: $50, MES: $5)
+export const FUTURES_MULTIPLIER: Record<string, number> = {
+  "/ES": 50,
+  "/MES": 5,
+};
+
+// dxFeed quote symbol for each underlying.
+// For futures, overridden at runtime with the front-month streamer symbol from the chain.
 export const UNDERLYING_QUOTE_SYMBOL: Record<Symbol, string> = {
   SPX: "SPX",
   AAPL: "AAPL",
+  "/ES": "/ES:XCME",
+  "/MES": "/MES:XCME",
 };
 
 // Strategies where each leg can have an independent expiration date.

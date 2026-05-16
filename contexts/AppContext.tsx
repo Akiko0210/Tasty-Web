@@ -13,9 +13,12 @@ import {
 } from "react";
 import { getBalance } from "@/api/balance";
 import { getOptionChain } from "@/api/getOptionChains";
+import { getFuturesOptionChain } from "@/api/getFuturesChain";
+import type { FuturesContract } from "@/api/getFuturesChain";
 import { getQuotes } from "@/api/getQuotes";
 import { fetchOrders, mapTastyworksResponseToOrders } from "@/api/fetchOrders";
 import type { Order } from "@/lib/types";
+import { FUTURES_PRODUCT_CODE } from "@/lib/constants";
 
 // ---------- Quote stream ----------
 
@@ -180,7 +183,12 @@ export interface ChainData {
   symbolMap: Record<string, { occ: string; streamer: string }>;
   status: "loading" | "ready" | "error";
   error: string | null;
+  underlyingStreamerSymbol?: string;
+  futuresContracts?: FuturesContract[];
+  expirationToContract?: Record<string, string>;
 }
+
+export type { FuturesContract };
 
 interface OrdersState {
   orders: Order[];
@@ -243,15 +251,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return { ...prev, [symbol]: { expirations: [], strikesByExpiration: {}, symbolMap: {}, status: "loading", error: null } };
     });
 
-    getOptionChain(symbol)
-      .then(({ expirations, strikesByExpiration, symbolMap }) => {
+    const productCode = FUTURES_PRODUCT_CODE[symbol];
+    const fetcher = productCode
+      ? getFuturesOptionChain(productCode).then(
+          ({ expirations, strikesByExpiration, symbolMap, frontMonthStreamerSymbol, futuresContracts, expirationToContract }) => ({
+            expirations,
+            strikesByExpiration,
+            symbolMap,
+            underlyingStreamerSymbol: frontMonthStreamerSymbol,
+            futuresContracts,
+            expirationToContract,
+          }),
+        )
+      : getOptionChain(symbol).then(({ expirations, strikesByExpiration, symbolMap }) => ({
+          expirations,
+          strikesByExpiration,
+          symbolMap,
+          underlyingStreamerSymbol: undefined as string | undefined,
+          futuresContracts: undefined as FuturesContract[] | undefined,
+          expirationToContract: undefined as Record<string, string> | undefined,
+        }));
+
+    fetcher
+      .then(({ expirations, strikesByExpiration, symbolMap, underlyingStreamerSymbol, futuresContracts, expirationToContract }) => {
         setChainCache((prev) => ({
           ...prev,
-          [symbol]: { expirations, strikesByExpiration, symbolMap, status: "ready", error: null },
+          [symbol]: { expirations, strikesByExpiration, symbolMap, status: "ready", error: null, underlyingStreamerSymbol, futuresContracts, expirationToContract },
         }));
       })
       .catch((e) => {
-        console.error(`Failed to fetch option chain for ${symbol}:`, e);
+        console.error(`Failed to fetch chain for ${symbol}:`, e);
         const msg = e instanceof Error ? e.message : "Unknown error fetching option chain.";
         setChainCache((prev) => ({
           ...prev,

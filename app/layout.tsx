@@ -31,9 +31,9 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <AppProvider>
-          <div className="flex bg-white font-sans text-black dark:bg-black dark:text-white">
+          <div className="flex overflow-x-hidden bg-white font-sans text-black dark:bg-black dark:text-white">
             <Sidebar strategies={strategyConfigs} />
-            <main className="flex-1 pt-14 lg:ml-64 lg:pt-0">{children}</main>
+            <main className="min-w-0 flex-1 pt-14 lg:ml-64 lg:pt-0">{children}</main>
           </div>
         </AppProvider>
       </body>

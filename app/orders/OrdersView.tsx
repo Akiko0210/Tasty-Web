@@ -14,24 +14,39 @@ function formatLegDescription(leg: Leg): string {
 function formatPrice(totalCost: number): { text: string; isCredit: boolean } {
   const amount = totalCost / 100;
   const isCredit = totalCost <= 0;
-  const display = isCredit ? `${Math.abs(amount).toFixed(2)}` : `-${amount.toFixed(2)}`;
+  const display = isCredit
+    ? `${Math.abs(amount).toFixed(2)}`
+    : `-${amount.toFixed(2)}`;
   return { text: `LMT ${display} ${isCredit ? "cr" : "db"}`, isCredit };
 }
 
 function statusColor(status: string): string {
   switch (status) {
-    case "Filled":     return "border-blue-500 bg-blue-500 text-white";
-    case "Working":    return "border-yellow-500 bg-yellow-500 text-black";
-    case "Cancelled":  return "border-orange-500 bg-orange-500 text-white";
-    case "Rejected":   return "border-red-500 bg-red-500 text-white";
-    case "Expired":    return "border-gray-500 bg-gray-500 text-white";
-    case "Received":   return "border-sky-400 bg-sky-400 text-black";
-    default:           return "border-gray-400 bg-gray-400 text-white";
+    case "Filled":
+      return "border-blue-500 bg-blue-500 text-white";
+    case "Working":
+      return "border-yellow-500 bg-yellow-500 text-black";
+    case "Cancelled":
+      return "border-orange-500 bg-orange-500 text-white";
+    case "Rejected":
+      return "border-red-500 bg-red-500 text-white";
+    case "Expired":
+      return "border-gray-500 bg-gray-500 text-white";
+    case "Received":
+      return "border-sky-400 bg-sky-400 text-black";
+    default:
+      return "border-gray-400 bg-gray-400 text-white";
   }
 }
 
 const STATUS_FILTER_OPTIONS = [
-  "All", "Filled", "Working", "Cancelled", "Rejected", "Expired", "Received",
+  "All",
+  "Filled",
+  "Working",
+  "Cancelled",
+  "Rejected",
+  "Expired",
+  "Received",
 ];
 
 function OrderCard({ order, mounted }: { order: Order; mounted: boolean }) {
@@ -44,14 +59,18 @@ function OrderCard({ order, mounted }: { order: Order; mounted: boolean }) {
           {order.symbol}
         </span>
         <span className="flex-1 text-sm font-medium">{order.strategyName}</span>
-        <span className={`rounded px-2 py-0.5 text-xs font-bold ${statusColor(order.status)}`}>
+        <span
+          className={`rounded px-2 py-0.5 text-xs font-bold ${statusColor(order.status)}`}
+        >
           {order.status}
         </span>
       </div>
 
       {/* Row 2 — Price · TIF · Time */}
       <div className="mt-1.5 flex items-center gap-3 text-sm">
-        <span className={`font-mono font-medium ${price.isCredit ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+        <span
+          className={`font-mono font-medium ${price.isCredit ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+        >
           {price.text}
         </span>
         <span className="opacity-50">·</span>
@@ -78,7 +97,13 @@ function OrderCard({ order, mounted }: { order: Order; mounted: boolean }) {
           return (
             <span key={leg.id} className="font-mono text-xs">
               {base}{" "}
-              <span className={isSto ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}>
+              <span
+                className={
+                  isSto
+                    ? "text-red-600 dark:text-red-400"
+                    : "text-green-600 dark:text-green-400"
+                }
+              >
                 {isSto ? "STO" : "BTO"}
               </span>
             </span>
@@ -200,24 +225,16 @@ export default function OrdersView() {
                 type="date"
                 value={displayDateStart}
                 onChange={(e) => setDateStart(e.target.value)}
-                className="rounded border-2 border-black bg-white px-2 py-1.5 text-sm dark:border-white dark:bg-black"
+                className="w-36 rounded border-2 border-black bg-white px-2 py-1.5 text-sm dark:border-white dark:bg-black"
               />
               <span className="text-sm opacity-60">–</span>
               <input
                 type="date"
                 value={displayDateEnd}
                 onChange={(e) => setDateEnd(e.target.value)}
-                className="rounded border-2 border-black bg-white px-2 py-1.5 text-sm dark:border-white dark:bg-black"
+                className="w-36 rounded border-2 border-black bg-white px-2 py-1.5 text-sm dark:border-white dark:bg-black"
               />
             </div>
-
-            {/* Live indicator */}
-            <button
-              type="button"
-              className="min-h-[38px] touch-manipulation rounded border-2 border-green-600 bg-green-600 px-3 py-1.5 text-sm font-bold text-white"
-            >
-              Live
-            </button>
           </div>
         </div>
 
@@ -275,8 +292,12 @@ export default function OrdersView() {
                         key={order.id}
                         className="border-b border-black/20 dark:border-white/20"
                       >
-                        <td className="px-2 py-2 font-medium sm:px-4">{order.symbol}</td>
-                        <td className="px-2 py-2 sm:px-4">{order.strategyName}</td>
+                        <td className="px-2 py-2 font-medium sm:px-4">
+                          {order.symbol}
+                        </td>
+                        <td className="px-2 py-2 sm:px-4">
+                          {order.strategyName}
+                        </td>
                         <td className="px-2 py-2 sm:px-4">
                           <span
                             className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-bold ${statusColor(order.status)}`}
@@ -295,7 +316,9 @@ export default function OrdersView() {
                             {price.text}
                           </span>
                         </td>
-                        <td className="px-2 py-2 text-sm sm:px-4">{order.tif}</td>
+                        <td className="px-2 py-2 text-sm sm:px-4">
+                          {order.tif}
+                        </td>
                         <td className="px-2 py-2 text-xs sm:px-4">
                           {mounted
                             ? order.updatedAt.toLocaleString("en-US", {
@@ -306,7 +329,9 @@ export default function OrdersView() {
                               })
                             : ""}
                         </td>
-                        <td className="px-2 py-2 text-xs sm:px-4">{order.orderNumber}</td>
+                        <td className="px-2 py-2 text-xs sm:px-4">
+                          {order.orderNumber}
+                        </td>
                         <td className="px-2 py-2 text-xs sm:px-4">
                           <div className="flex flex-col gap-0.5">
                             {order.legs.map((leg) => {
