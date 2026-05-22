@@ -14,6 +14,7 @@ interface OrderConfirmModalProps {
   submitError: string | null;
   onConfirm: () => void;
   onCancel: () => void;
+  confirmLabel?: string;
 }
 
 function NetCost({ totalCost }: { totalCost: number }) {
@@ -40,6 +41,7 @@ export function OrderConfirmModal({
   submitError,
   onConfirm,
   onCancel,
+  confirmLabel = "Confirm Order",
 }: OrderConfirmModalProps) {
   const fees = Number(dryRun["fee-calculation"]?.["total-fees"] ?? 0);
   const bpChange = Number(dryRun["buying-power-effect"]?.["change-in-buying-power"] ?? 0);
@@ -194,7 +196,7 @@ export function OrderConfirmModal({
             disabled={isSubmitting}
             className="flex-1 rounded-lg border-2 border-black bg-black px-4 py-2.5 text-sm font-bold text-white transition hover:bg-black/80 disabled:opacity-40 dark:border-white dark:bg-white dark:text-black dark:hover:bg-white/80"
           >
-            {isSubmitting ? "Placing…" : "Confirm Order"}
+            {isSubmitting ? "Placing…" : confirmLabel}
           </button>
         </div>
 

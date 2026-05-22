@@ -17,7 +17,7 @@ import { getFuturesOptionChain } from "@/api/getFuturesChain";
 import type { FuturesContract } from "@/api/getFuturesChain";
 import { getQuotes } from "@/api/getQuotes";
 import { fetchOrders, mapTastyworksResponseToOrders } from "@/api/fetchOrders";
-import type { Order } from "@/lib/types";
+import type { Order, Leg } from "@/lib/types";
 import { FUTURES_PRODUCT_CODE } from "@/lib/constants";
 
 // ---------- Quote stream ----------
@@ -197,6 +197,15 @@ interface OrdersState {
   fetchedKey: string | null;
 }
 
+export interface PrefilledOrder {
+  symbol: string;
+  strategyName: string;
+  legs: Leg[];
+  tif: "Day" | "GTC";
+  totalCost: number;
+  replaceOrderId?: string;
+}
+
 interface AppContextType {
   // Account
   balance: number;
@@ -212,6 +221,10 @@ interface AppContextType {
   // Orders
   ordersState: OrdersState;
   fetchOrdersRange: (startDate: string, endDate: string) => void;
+  invalidateOrdersCache: () => void;
+  // Order ticket prefill (Similar / Opposite / Replace)
+  prefilledOrder: PrefilledOrder | null;
+  setPrefilledOrder: (order: PrefilledOrder | null) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -228,6 +241,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Quotes
   const [quoteSymbols, setQuoteSymbols] = useState<string[]>(["SPX"]);
   const quotes = useQuoteStream(quoteSymbols);
+
+  // Prefilled order (Similar / Opposite / Replace flow)
+  const [prefilledOrder, setPrefilledOrder] = useState<PrefilledOrder | null>(null);
 
   // Orders
   const [ordersState, setOrdersState] = useState<OrdersState>({
@@ -289,6 +305,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
   }, []);
 
+  const invalidateOrdersCache = useCallback(() => {
+    setOrdersState((prev) => ({ ...prev, fetchedKey: null }));
+  }, []);
+
   // Orders — only fetch when date range actually changes
   const fetchOrdersRange = useCallback(
     (startDate: string, endDate: string) => {
@@ -331,6 +351,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setQuoteSymbols,
         ordersState,
         fetchOrdersRange,
+        invalidateOrdersCache,
+        prefilledOrder,
+        setPrefilledOrder,
       }}
     >
       {children}

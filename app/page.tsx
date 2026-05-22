@@ -10,6 +10,7 @@ import type { Symbol } from "@/lib/constants";
 import { MULTI_EXPIRY_STRATEGIES } from "@/lib/constants";
 import type { OrderPayload, DryRunResult } from "@/lib/types";
 import { dryRunOrder, submitOrder } from "@/api/placeOrder";
+import { replaceOrder } from "@/api/replaceOrder";
 import { StrategyDropdown } from "../components/StrategyDropdown";
 import { LegRow, LegCard } from "../components/LegRow";
 import { OrderConfirmModal } from "../components/OrderConfirmModal";
@@ -24,6 +25,8 @@ export default function StrategyPanel() {
     fetchOptionChainForSymbol,
     quotes,
     setQuoteSymbols,
+    prefilledOrder,
+    setPrefilledOrder,
   } = useApp();
 
   const [selectedSymbol, setSelectedSymbol] = useState<Symbol>(SYMBOLS[0]);
@@ -33,6 +36,10 @@ export default function StrategyPanel() {
   const [symbolDropdownOpen, setSymbolDropdownOpen] = useState<boolean>(false);
   const [showLegPrices, setShowLegPrices] = useState(false);
   const [orderPriceOverride, setOrderPriceOverride] = useState<string | null>(null);
+
+  // Prefill state (from Similar / Opposite / Replace on orders page)
+  const [pendingPrefillLegs, setPendingPrefillLegs] = useState<import("@/lib/types").Leg[] | null>(null);
+  const [replaceOrderId, setReplaceOrderId] = useState<string | null>(null);
 
   // Order confirmation flow
   const [tif, setTif] = useState<"Day" | "GTC">("Day");
@@ -146,8 +153,45 @@ export default function StrategyPanel() {
     setQuoteSymbols([underlyingQuoteSymbol, ...legSymbols]);
   }, [underlyingQuoteSymbol, legSymbols, setQuoteSymbols]);
 
+  // Apply prefilled order (from Similar / Opposite / Replace on orders page)
   useEffect(() => {
-    if (strategyKey && optionChainStatus === "ready") {
+    if (!prefilledOrder) return;
+
+    const sym =
+      SYMBOLS.find(
+        (s) => prefilledOrder.symbol === s || prefilledOrder.symbol.startsWith(s),
+      ) ?? SYMBOLS[0];
+    setSelectedSymbol(sym);
+
+    const stratIdx = strategyConfigs.findIndex(
+      (s) => s.name === prefilledOrder.strategyName,
+    );
+    setSelected(stratIdx >= 0 ? stratIdx : 0);
+    setTif(prefilledOrder.tif);
+    setOrderPriceOverride(Math.abs(prefilledOrder.totalCost / 100).toFixed(2));
+    setReplaceOrderId(prefilledOrder.replaceOrderId ?? null);
+
+    setPendingPrefillLegs(
+      prefilledOrder.legs.map((l) => ({
+        ...l,
+        id: `leg-${Math.random().toString(36).substring(2, 9)}-${Date.now()}`,
+        visible: true,
+      })),
+    );
+
+    setPrefilledOrder(null);
+  }, [prefilledOrder, setPrefilledOrder, setSelected]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!strategyKey) return;
+
+    if (pendingPrefillLegs) {
+      setLegsByStrategy((prev) => ({ ...prev, [strategyKey]: pendingPrefillLegs }));
+      setPendingPrefillLegs(null);
+      return;
+    }
+
+    if (optionChainStatus === "ready") {
       setLegsByStrategy((prev) => {
         if (prev[strategyKey]?.length) return prev;
         const newLegs = toLegs(
@@ -161,7 +205,7 @@ export default function StrategyPanel() {
         return { ...prev, [strategyKey]: newLegs };
       });
     }
-  }, [strategyKey, optionChainStatus, strikesByExpiration, chainExpirations]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [strategyKey, optionChainStatus, pendingPrefillLegs, strikesByExpiration, chainExpirations]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fill in mid price for legs that haven't been priced yet
   useEffect(() => {
@@ -333,7 +377,12 @@ export default function StrategyPanel() {
     setSubmitError(null);
     setIsSubmitting(true);
     try {
-      await submitOrder(pendingOrder.payload);
+      if (replaceOrderId) {
+        await replaceOrder(replaceOrderId, pendingOrder.payload);
+        setReplaceOrderId(null);
+      } else {
+        await submitOrder(pendingOrder.payload);
+      }
       setBalance((prev: number) => prev + pendingOrder.order.totalCost);
       setPendingOrder(null);
     } catch (err) {
@@ -353,6 +402,7 @@ export default function StrategyPanel() {
         submitError={submitError}
         onConfirm={handleConfirmOrder}
         onCancel={() => { setPendingOrder(null); setSubmitError(null); }}
+        confirmLabel={replaceOrderId ? "Replace Order" : "Confirm Order"}
       />
     )}
     <div className="p-3 sm:p-6">

@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import type { Leg, Order } from "@/lib/types";
 import { useApp } from "@/contexts/AppContext";
+import { cancelOrder } from "@/api/cancelOrder";
 
 function formatLegDescription(leg: Leg): string {
   const qty = leg.side === "Long" ? leg.size : -leg.size;
@@ -49,10 +51,51 @@ const STATUS_FILTER_OPTIONS = [
   "Received",
 ];
 
-function OrderCard({ order, mounted }: { order: Order; mounted: boolean }) {
+function LegDescription({ leg }: { leg: Leg }) {
+  const desc = formatLegDescription(leg);
+  const isSto = desc.endsWith("STO");
+  const base = desc.replace(/\s(STO|BTO)$/, "");
+  return (
+    <span className="font-mono text-xs">
+      {base}{" "}
+      <span
+        className={
+          isSto
+            ? "text-red-600 dark:text-red-400"
+            : "text-green-600 dark:text-green-400"
+        }
+      >
+        {isSto ? "STO" : "BTO"}
+      </span>
+    </span>
+  );
+}
+
+function OrderCard({
+  order,
+  mounted,
+  onContextMenu,
+  onTouchStart,
+  onTouchMove,
+  onTouchEnd,
+}: {
+  order: Order;
+  mounted: boolean;
+  onContextMenu: (e: React.MouseEvent) => void;
+  onTouchStart: (e: React.TouchEvent) => void;
+  onTouchMove: (e: React.TouchEvent) => void;
+  onTouchEnd: () => void;
+}) {
   const price = formatPrice(order.totalCost);
   return (
-    <div className="border-b border-black/20 px-4 py-3 dark:border-white/20">
+    <div
+      className="select-none border-b border-black/20 px-4 py-3 dark:border-white/20"
+      onContextMenu={onContextMenu}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchEnd}
+    >
       {/* Row 1 — Symbol · Strategy · Status */}
       <div className="flex items-center gap-2">
         <span className="rounded border-2 border-black px-2 py-0.5 text-sm font-bold dark:border-white">
@@ -90,25 +133,9 @@ function OrderCard({ order, mounted }: { order: Order; mounted: boolean }) {
 
       {/* Row 3 — Legs */}
       <div className="mt-1.5 flex flex-col gap-0.5">
-        {order.legs.map((leg) => {
-          const desc = formatLegDescription(leg);
-          const isSto = desc.endsWith("STO");
-          const base = desc.replace(/\s(STO|BTO)$/, "");
-          return (
-            <span key={leg.id} className="font-mono text-xs">
-              {base}{" "}
-              <span
-                className={
-                  isSto
-                    ? "text-red-600 dark:text-red-400"
-                    : "text-green-600 dark:text-green-400"
-                }
-              >
-                {isSto ? "STO" : "BTO"}
-              </span>
-            </span>
-          );
-        })}
+        {order.legs.map((leg) => (
+          <LegDescription key={leg.id} leg={leg} />
+        ))}
       </div>
 
       {/* Order number */}
@@ -128,13 +155,25 @@ function getDefaultDateRange() {
 }
 
 export default function OrdersView() {
-  const { ordersState, fetchOrdersRange } = useApp();
+  const router = useRouter();
+  const { ordersState, fetchOrdersRange, invalidateOrdersCache, setPrefilledOrder } = useApp();
 
   const [statusFilter, setStatusFilter] = useState("All");
   const [symbolFilter, setSymbolFilter] = useState("");
   const [dateStart, setDateStart] = useState("");
   const [dateEnd, setDateEnd] = useState("");
   const [mounted, setMounted] = useState(false);
+
+  // Context menu
+  const [contextMenu, setContextMenu] = useState<{
+    order: Order;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressPosRef = useRef<{ x: number; y: number } | null>(null);
 
   const defaultRange = getDefaultDateRange();
   const displayDateStart = dateStart || (mounted ? defaultRange.start : "");
@@ -152,12 +191,21 @@ export default function OrdersView() {
     }
   }, [mounted, dateStart, dateEnd]);
 
-  // Trigger fetch (no-op if already fetched for this date range)
   useEffect(() => {
     if (displayDateStart && displayDateEnd) {
       fetchOrdersRange(displayDateStart, displayDateEnd);
     }
   }, [displayDateStart, displayDateEnd, fetchOrdersRange]);
+
+  // Close context menu on Escape
+  useEffect(() => {
+    if (!contextMenu) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") closeContextMenu();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [contextMenu]);
 
   const { orders, loading, error } = ordersState;
 
@@ -178,6 +226,119 @@ export default function OrdersView() {
     return true;
   });
 
+  // ── Context menu helpers ───────────────────────────────────────────────────
+
+  function openContextMenu(order: Order, x: number, y: number) {
+    setCancelError(null);
+    setContextMenu({ order, x, y });
+  }
+
+  function closeContextMenu() {
+    setContextMenu(null);
+    setCancelError(null);
+  }
+
+  function handleContextMenu(e: React.MouseEvent, order: Order) {
+    e.preventDefault();
+    openContextMenu(order, e.clientX, e.clientY);
+  }
+
+  function handleTouchStart(e: React.TouchEvent, order: Order) {
+    const touch = e.touches[0];
+    longPressPosRef.current = { x: touch.clientX, y: touch.clientY };
+    longPressTimerRef.current = setTimeout(() => {
+      if (longPressPosRef.current) {
+        openContextMenu(order, longPressPosRef.current.x, longPressPosRef.current.y);
+      }
+    }, 500);
+  }
+
+  function handleTouchMove(e: React.TouchEvent) {
+    if (!longPressPosRef.current || !longPressTimerRef.current) return;
+    const touch = e.touches[0];
+    const dx = touch.clientX - longPressPosRef.current.x;
+    const dy = touch.clientY - longPressPosRef.current.y;
+    if (Math.sqrt(dx * dx + dy * dy) > 10) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }
+
+  function handleTouchEnd() {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }
+
+  // ── Order actions ──────────────────────────────────────────────────────────
+
+  async function handleCancel(order: Order) {
+    setCancellingId(order.id);
+    try {
+      await cancelOrder(order.id);
+      invalidateOrdersCache();
+      closeContextMenu();
+    } catch (e) {
+      setCancelError(e instanceof Error ? e.message : "Cancel failed");
+    } finally {
+      setCancellingId(null);
+    }
+  }
+
+  function handleSimilar(order: Order) {
+    setPrefilledOrder({
+      symbol: order.symbol,
+      strategyName: order.strategyName,
+      legs: order.legs,
+      tif: order.tif as "Day" | "GTC",
+      totalCost: order.totalCost,
+    });
+    router.push("/");
+    closeContextMenu();
+  }
+
+  function handleOpposite(order: Order) {
+    setPrefilledOrder({
+      symbol: order.symbol,
+      strategyName: order.strategyName,
+      legs: order.legs.map((leg) => ({
+        ...leg,
+        side: leg.side === "Long" ? ("Short" as const) : ("Long" as const),
+      })),
+      tif: order.tif as "Day" | "GTC",
+      totalCost: -order.totalCost,
+    });
+    router.push("/");
+    closeContextMenu();
+  }
+
+  function handleReplace(order: Order) {
+    setPrefilledOrder({
+      symbol: order.symbol,
+      strategyName: order.strategyName,
+      legs: order.legs,
+      tif: order.tif as "Day" | "GTC",
+      totalCost: order.totalCost,
+      replaceOrderId: order.id,
+    });
+    router.push("/");
+    closeContextMenu();
+  }
+
+  // ── Context menu positioning ───────────────────────────────────────────────
+
+  function menuStyle(x: number, y: number): React.CSSProperties {
+    const menuW = 192;
+    const menuH = 200;
+    return {
+      left: Math.min(x, window.innerWidth - menuW - 8),
+      top: Math.min(y, window.innerHeight - menuH - 8),
+    };
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto bg-white p-4 dark:bg-black sm:p-6">
       <div className="mx-auto w-full min-w-0 max-w-6xl">
@@ -192,7 +353,7 @@ export default function OrdersView() {
                 key={status}
                 type="button"
                 onClick={() => setStatusFilter(status)}
-                className={`min-h-[40px] touch-manipulation rounded-full border-2 px-3 py-1.5 text-sm font-bold transition sm:px-4 ${
+                className={`min-h-10 touch-manipulation rounded-full border-2 px-3 py-1.5 text-sm font-bold transition sm:px-4 ${
                   statusFilter !== status
                     ? "border-black bg-transparent hover:bg-black/10 dark:border-white dark:hover:bg-white/10"
                     : status === "All"
@@ -262,15 +423,23 @@ export default function OrdersView() {
         ) : (
           <>
             {/* Mobile cards */}
-            <div className="sm:hidden rounded-xl border-2 border-black bg-white dark:border-white dark:bg-black">
+            <div className="rounded-xl border-2 border-black bg-white dark:border-white dark:bg-black sm:hidden">
               {filteredOrders.map((order) => (
-                <OrderCard key={order.id} order={order} mounted={mounted} />
+                <OrderCard
+                  key={order.id}
+                  order={order}
+                  mounted={mounted}
+                  onContextMenu={(e) => handleContextMenu(e, order)}
+                  onTouchStart={(e) => handleTouchStart(e, order)}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
+                />
               ))}
             </div>
 
             {/* Desktop table */}
-            <div className="hidden sm:block overflow-x-auto rounded-xl border-2 border-black bg-white shadow-lg dark:border-white dark:bg-black">
-              <table className="w-full min-w-[800px]">
+            <div className="hidden overflow-x-auto rounded-xl border-2 border-black bg-white shadow-lg dark:border-white dark:bg-black sm:block">
+              <table className="w-full min-w-200">
                 <thead>
                   <tr className="border-b-2 border-black text-left text-xs font-bold uppercase tracking-wider dark:border-white">
                     <th className="px-2 py-3 sm:px-4">Symbol</th>
@@ -290,7 +459,12 @@ export default function OrdersView() {
                     return (
                       <tr
                         key={order.id}
-                        className="border-b border-black/20 dark:border-white/20"
+                        className="select-none border-b border-black/20 dark:border-white/20"
+                        onContextMenu={(e) => handleContextMenu(e, order)}
+                        onTouchStart={(e) => handleTouchStart(e, order)}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEnd}
+                        onTouchCancel={handleTouchEnd}
                       >
                         <td className="px-2 py-2 font-medium sm:px-4">
                           {order.symbol}
@@ -334,25 +508,9 @@ export default function OrdersView() {
                         </td>
                         <td className="px-2 py-2 text-xs sm:px-4">
                           <div className="flex flex-col gap-0.5">
-                            {order.legs.map((leg) => {
-                              const desc = formatLegDescription(leg);
-                              const isSto = desc.endsWith("STO");
-                              const base = desc.replace(/\s(STO|BTO)$/, "");
-                              return (
-                                <span key={leg.id}>
-                                  {base}{" "}
-                                  <span
-                                    className={
-                                      isSto
-                                        ? "text-red-600 dark:text-red-400"
-                                        : "text-green-600 dark:text-green-400"
-                                    }
-                                  >
-                                    {isSto ? "STO" : "BTO"}
-                                  </span>
-                                </span>
-                              );
-                            })}
+                            {order.legs.map((leg) => (
+                              <LegDescription key={leg.id} leg={leg} />
+                            ))}
                           </div>
                         </td>
                         <td className="px-2 py-2 sm:px-4" />
@@ -365,6 +523,85 @@ export default function OrdersView() {
           </>
         )}
       </div>
+
+      {/* ── Context menu ──────────────────────────────────────────────────────── */}
+      {contextMenu && (
+        <>
+          {/* Backdrop — pointerdown fires on new press only, not on the synthetic click after long press */}
+          <div
+            className="fixed inset-0 z-40"
+            onPointerDown={closeContextMenu}
+            onContextMenu={(e) => { e.preventDefault(); closeContextMenu(); }}
+          />
+
+          {/* Menu */}
+          <div
+            className="fixed z-50 w-48 overflow-hidden rounded-xl border-2 border-black bg-white shadow-2xl dark:border-white dark:bg-black"
+            style={menuStyle(contextMenu.x, contextMenu.y)}
+          >
+            {/* Header */}
+            <div className="border-b border-black/10 px-3 py-2 dark:border-white/10">
+              <p className="truncate text-xs font-bold">
+                {contextMenu.order.symbol}
+              </p>
+              <p className="truncate text-xs opacity-50">
+                {contextMenu.order.strategyName}
+              </p>
+            </div>
+
+            {/* Actions */}
+            <div className="py-1">
+              {contextMenu.order.status === "Working" && (
+                <button
+                  type="button"
+                  onClick={() => handleReplace(contextMenu.order)}
+                  className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10"
+                >
+                  Replace
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => handleSimilar(contextMenu.order)}
+                className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10"
+              >
+                Similar
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpposite(contextMenu.order)}
+                className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10"
+              >
+                Opposite
+              </button>
+              {contextMenu.order.status === "Working" && (
+                <>
+                  <div className="mx-3 my-1 border-t border-black/10 dark:border-white/10" />
+                  <button
+                    type="button"
+                    onClick={() => handleCancel(contextMenu.order)}
+                    disabled={cancellingId === contextMenu.order.id}
+                    className="w-full px-4 py-2.5 text-left text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                  >
+                    {cancellingId === contextMenu.order.id
+                      ? "Cancelling…"
+                      : "Cancel"}
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Cancel error */}
+            {cancelError && (
+              <div className="border-t border-red-200 px-3 py-2 dark:border-red-900">
+                <p className="text-xs text-red-600 dark:text-red-400">
+                  {cancelError}
+                </p>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
