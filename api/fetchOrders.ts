@@ -68,7 +68,8 @@ interface RawOrder {
   status: string;
   price: string;
   "price-effect": string;
-  "terminal-at": string;
+  "terminal-at": string | null;
+  "received-at": string;
   "time-in-force": string;
   "leg-count": number;
   size: number;
@@ -276,12 +277,12 @@ export async function mapTastyworksResponseToOrders(
       id: String(o.id),
       symbol: o["underlying-symbol"],
       strategyName: identifyStrategy(legs),
-      status: o.status,
+      status: o.status === "Live" ? "Working" : o.status,
       orderNumber: String(o.id),
       tif: o["time-in-force"],
       totalCost: isCredit ? -price : price,
       profitLoss: undefined,
-      updatedAt: new Date(o["terminal-at"]),
+      updatedAt: new Date(o["terminal-at"] ?? o["received-at"]),
       legs,
     };
   });
