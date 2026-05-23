@@ -1,4 +1,13 @@
 import type { Leg, OptionType, Side, OrderPayload } from "./types";
+import { strategyConfigs } from "./constants";
+
+export function strategyToSlug(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, "-");
+}
+
+export function slugToStrategyIndex(slug: string): number {
+  return strategyConfigs.findIndex((s) => strategyToSlug(s.name) === slug);
+}
 
 let legCounter = 0;
 

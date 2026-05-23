@@ -5,6 +5,8 @@ import type { StrategyConfig } from "@/lib/types";
 import { StrategySelector } from "./StrategySelector";
 import { useApp } from "@/contexts/AppContext";
 import { usePathname, useRouter } from "next/navigation";
+import { strategyConfigs } from "@/lib/constants";
+import { strategyToSlug, slugToStrategyIndex } from "@/lib/utils";
 
 interface SidebarProps {
   strategies: StrategyConfig[];
@@ -14,7 +16,9 @@ export function Sidebar({ strategies }: SidebarProps) {
   const { balance, selected, setSelected } = useApp();
   const router = useRouter();
   const pathname = usePathname();
-  const active = pathname === "/orders" ? "orders" : "strategy";
+  const isOrders = pathname === "/orders";
+  const isStrategy = slugToStrategyIndex(pathname.slice(1)) >= 0;
+  const active = isOrders ? "orders" : isStrategy ? "strategy" : "none";
   const [mobileOpen, setMobileOpen] = useState(false);
 
   function navigate(path: string) {
@@ -24,7 +28,7 @@ export function Sidebar({ strategies }: SidebarProps) {
 
   function selectStrategy(idx: number) {
     setSelected(idx);
-    router.push("/");
+    router.push(`/${strategyToSlug(strategyConfigs[idx].name)}`);
     setMobileOpen(false);
   }
 
@@ -86,7 +90,7 @@ export function Sidebar({ strategies }: SidebarProps) {
         <div className="border-t-2 border-black p-3 dark:border-white">
           <button
             type="button"
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/long-call")}
             className={`mb-2 ${navButtonClass(active === "strategy")}`}
           >
             Strategies

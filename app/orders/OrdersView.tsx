@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { Leg, Order } from "@/lib/types";
 import { useApp } from "@/contexts/AppContext";
 import { cancelOrder } from "@/api/cancelOrder";
+import { strategyToSlug } from "@/lib/utils";
 
 function formatLegDescription(leg: Leg): string {
   const qty = leg.side === "Long" ? leg.size : -leg.size;
@@ -294,7 +295,7 @@ export default function OrdersView() {
       tif: order.tif as "Day" | "GTC",
       totalCost: order.totalCost,
     });
-    router.push("/");
+    router.push(`/${strategyToSlug(order.strategyName)}`);
     closeContextMenu();
   }
 
@@ -309,7 +310,7 @@ export default function OrdersView() {
       tif: order.tif as "Day" | "GTC",
       totalCost: -order.totalCost,
     });
-    router.push("/");
+    router.push(`/${strategyToSlug(order.strategyName)}`);
     closeContextMenu();
   }
 
@@ -322,7 +323,7 @@ export default function OrdersView() {
       totalCost: order.totalCost,
       replaceOrderId: order.id,
     });
-    router.push("/");
+    router.push(`/${strategyToSlug(order.strategyName)}`);
     closeContextMenu();
   }
 
