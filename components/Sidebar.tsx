@@ -17,8 +17,9 @@ export function Sidebar({ strategies }: SidebarProps) {
   const router = useRouter();
   const pathname = usePathname();
   const isOrders = pathname === "/orders";
+  const isDashboard = pathname === "/dashboard";
   const isStrategy = slugToStrategyIndex(pathname.slice(1)) >= 0;
-  const active = isOrders ? "orders" : isStrategy ? "strategy" : "none";
+  const active = isOrders ? "orders" : isDashboard ? "dashboard" : isStrategy ? "strategy" : "none";
   const [mobileOpen, setMobileOpen] = useState(false);
 
   function navigate(path: string) {
@@ -88,6 +89,13 @@ export function Sidebar({ strategies }: SidebarProps) {
         />
 
         <div className="border-t-2 border-black p-3 dark:border-white">
+          <button
+            type="button"
+            onClick={() => { setSelected(null); navigate("/dashboard"); }}
+            className={`mb-2 ${navButtonClass(active === "dashboard")}`}
+          >
+            Dashboard
+          </button>
           <button
             type="button"
             onClick={() => navigate("/long-call")}

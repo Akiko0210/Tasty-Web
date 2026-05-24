@@ -3,11 +3,10 @@
 import { useState, useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import type { Leg, Order, OptionType, Side } from "@/lib/types";
-import { strategyConfigs, SYMBOLS, UNDERLYING_QUOTE_SYMBOL, FUTURES_SYMBOLS, FUTURES_MULTIPLIER } from "@/lib/constants";
+import { strategyConfigs, UNDERLYING_QUOTE_SYMBOL, FUTURES_SYMBOLS, FUTURES_MULTIPLIER } from "@/lib/constants";
 import { toLegs, calculateTotalCost, legToSymbol, buildStrategyLegs, buildOrderPayload, resolveStrikeOnExpChange, strategyToSlug, slugToStrategyIndex } from "@/lib/utils";
 import { useApp } from "@/contexts/AppContext";
 import type { FuturesContract } from "@/contexts/AppContext";
-import type { Symbol } from "@/lib/constants";
 import { MULTI_EXPIRY_STRATEGIES } from "@/lib/constants";
 import type { OrderPayload, DryRunResult } from "@/lib/types";
 import { dryRunOrder, submitOrder } from "@/api/placeOrder";
@@ -30,6 +29,7 @@ export default function StrategyPage() {
     fetchOptionChainForSymbol,
     quotes,
     setQuoteSymbols,
+    watchlist,
     prefilledOrder,
     setPrefilledOrder,
   } = useApp();
@@ -37,14 +37,21 @@ export default function StrategyPage() {
   // URL is the source of truth — fall back to it immediately so there's no blank flash on refresh
   const effectiveSelected = selected ?? (urlStrategyIdx >= 0 ? urlStrategyIdx : null);
 
-  // Symbol — persisted to localStorage
-  const [selectedSymbol, setSelectedSymbol] = useState<Symbol>(() => {
-    if (typeof window === "undefined") return SYMBOLS[0];
+  // Symbol — persisted to localStorage; validated against watchlist once it loads
+  const [selectedSymbol, setSelectedSymbol] = useState<string>(() => {
+    if (typeof window === "undefined") return "SPX";
     try {
-      const s = localStorage.getItem("tasty-symbol") as Symbol;
-      return SYMBOLS.includes(s) ? s : SYMBOLS[0];
-    } catch { return SYMBOLS[0]; }
+      return localStorage.getItem("tasty-symbol") ?? "SPX";
+    } catch { return "SPX"; }
   });
+
+  // When watchlist loads, fall back to the first symbol if the stored one isn't there
+  useEffect(() => {
+    if (watchlist.length > 0 && !watchlist.includes(selectedSymbol)) {
+      setSelectedSymbol(watchlist[0]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchlist]);
 
   const [selectedContract, setSelectedContract] = useState<string | null>(null);
 
@@ -179,7 +186,8 @@ export default function StrategyPage() {
   const underlyingQuoteSymbol =
     selectedContractData?.streamerSymbol ??
     chain?.underlyingStreamerSymbol ??
-    UNDERLYING_QUOTE_SYMBOL[selectedSymbol];
+    UNDERLYING_QUOTE_SYMBOL[selectedSymbol as keyof typeof UNDERLYING_QUOTE_SYMBOL] ??
+    selectedSymbol;
   const underlyingQuote = quotes[underlyingQuoteSymbol];
   const currentPrice = underlyingQuote?.last ?? null;
 
@@ -201,9 +209,9 @@ export default function StrategyPage() {
     if (!prefilledOrder) return;
 
     const sym =
-      SYMBOLS.find(
+      watchlist.find(
         (s) => prefilledOrder.symbol === s || prefilledOrder.symbol.startsWith(s),
-      ) ?? SYMBOLS[0];
+      ) ?? watchlist[0] ?? "SPX";
     setSelectedSymbol(sym);
 
     const stratIdx = strategyConfigs.findIndex(
@@ -467,7 +475,7 @@ export default function StrategyPage() {
             <>
               <div className="fixed inset-0 z-10" onClick={() => setSymbolDropdownOpen(false)} />
               <div className="absolute left-0 top-full z-20 mt-1 w-32 rounded-lg border-2 border-black bg-white shadow-[0_8px_32px_rgba(0,0,0,0.22)] dark:border-white dark:bg-neutral-900 dark:shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
-                {SYMBOLS.map((sym) => (
+                {watchlist.map((sym) => (
                   <button
                     key={sym}
                     type="button"

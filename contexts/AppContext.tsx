@@ -218,6 +218,9 @@ interface AppContextType {
   // Quotes
   quotes: Record<string, Quote>;
   setQuoteSymbols: Dispatch<SetStateAction<string[]>>;
+  // Watchlist
+  watchlist: string[];
+  saveWatchlist: (symbols: string[]) => Promise<void>;
   // Orders
   ordersState: OrdersState;
   fetchOrdersRange: (startDate: string, endDate: string) => void;
@@ -241,6 +244,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Quotes
   const [quoteSymbols, setQuoteSymbols] = useState<string[]>(["SPX"]);
   const quotes = useQuoteStream(quoteSymbols);
+
+  // Watchlist — persisted server-side
+  const [watchlist, setWatchlist] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetch("/api/watchlist")
+      .then((r) => r.json())
+      .then((s: string[]) => setWatchlist(s))
+      .catch(() => setWatchlist(["SPX", "/ES"]));
+  }, []);
+
+  const saveWatchlist = useCallback(async (symbols: string[]) => {
+    setWatchlist(symbols);
+    await fetch("/api/watchlist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbols }),
+    });
+  }, []);
 
   // Prefilled order (Similar / Opposite / Replace flow)
   const [prefilledOrder, setPrefilledOrder] = useState<PrefilledOrder | null>(null);
@@ -349,6 +371,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         fetchOptionChainForSymbol,
         quotes,
         setQuoteSymbols,
+        watchlist,
+        saveWatchlist,
         ordersState,
         fetchOrdersRange,
         invalidateOrdersCache,
