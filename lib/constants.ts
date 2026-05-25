@@ -17,11 +17,10 @@ export const FUTURES_MULTIPLIER: Record<string, number> = {
   "/MES": 5,
 };
 
-// dxFeed quote symbol for each underlying.
-// For futures, overridden at runtime with the front-month streamer symbol from the chain.
-export const UNDERLYING_QUOTE_SYMBOL: Record<Symbol, string> = {
-  SPX: "SPX",
-  AAPL: "AAPL",
+// dxFeed symbol overrides. Only needed when the dxFeed symbol differs from the Tastytrade symbol.
+// Futures need an exchange suffix; equity indices use a leading dot (e.g. ".RUT").
+// Regular equities (AAPL, NVDA, …) need no override — their tickers match dxFeed directly.
+export const UNDERLYING_QUOTE_SYMBOL: Record<string, string> = {
   "/ES": "/ES:XCME",
   "/MES": "/MES:XCME",
 };
