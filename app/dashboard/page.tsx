@@ -115,7 +115,7 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   onClick={() => removeSymbol(sym)}
-                  className="ml-4 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded border-2 border-black text-xs font-bold opacity-40 transition hover:opacity-100 dark:border-white"
+                  className="ml-4 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded border-2 border-red-400 text-sm font-bold text-red-400"
                   aria-label={`Remove ${sym}`}
                 >
                   ✕
@@ -128,7 +128,7 @@ export default function DashboardPage() {
         {/* Search input row */}
         {showInput && (
           <div className="mt-2">
-            <div className="flex items-center gap-2 rounded-lg border-2 border-black px-3 py-2 dark:border-white">
+            <div className="flex items-center gap-2 rounded-lg bg-neutral-100 px-3 py-2 dark:bg-neutral-900">
               <input
                 ref={inputRef}
                 type="text"
@@ -142,30 +142,30 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={cancelSearch}
-                className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded border-2 border-black text-xs font-bold opacity-40 transition hover:opacity-100 dark:border-white"
+                className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded border-2 border-red-400 text-sm font-bold text-red-400"
               >
                 ✕
               </button>
             </div>
 
             {result !== null && (
-              <div className="mt-1 rounded-lg border-2 border-black px-4 py-3 dark:border-white">
+              <div className="mt-1 rounded-lg bg-neutral-200 dark:bg-neutral-800">
                 {result.found ? (
-                  <div className="flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={addSymbol}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+                  >
                     <div className="min-w-0">
                       <span className="font-bold">{result.symbol}</span>
                       {result.description && (
                         <span className="ml-2 truncate text-sm opacity-60">{result.description}</span>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={addSymbol}
-                      className="flex-shrink-0 rounded border-2 border-black px-3 py-1 text-xs font-bold transition hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black"
-                    >
+                    <span className="flex-shrink-0 rounded border-2 border-black px-3 py-1 text-xs font-bold dark:border-white">
                       Add
-                    </button>
-                  </div>
+                    </span>
+                  </button>
                 ) : (
                   <p className="text-sm opacity-50">Symbol not found</p>
                 )}

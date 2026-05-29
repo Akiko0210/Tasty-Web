@@ -153,36 +153,6 @@ export default function StrategyPage() {
     setDryRunError(null);
   }, [strategyKey]);
 
-  // Per-share bid/ask/mid net across all legs (NaN if any quote is missing)
-  const totalBid = legs.reduce((sum, leg) => {
-    const sym = legToSymbol(leg, symbolMap);
-    const q = sym ? quotes[sym] : undefined;
-    if (!q) return NaN;
-    const c = q.bid * leg.size;
-    return sum + (leg.side === "Long" ? -c : c);
-  }, 0);
-  const totalAsk = legs.reduce((sum, leg) => {
-    const sym = legToSymbol(leg, symbolMap);
-    const q = sym ? quotes[sym] : undefined;
-    if (!q) return NaN;
-    const c = q.ask * leg.size;
-    return sum + (leg.side === "Long" ? -c : c);
-  }, 0);
-
-  const totalMid =
-    isNaN(totalBid) || isNaN(totalAsk) ? NaN : (totalBid + totalAsk) / 2;
-
-  // Direction (credit/debit) is fixed by mid price; user only types the magnitude.
-  const directionSign = isNaN(totalMid)
-    ? totalCost >= 0 ? 1 : -1
-    : totalMid >= 0 ? 1 : -1;
-
-  const parsedOverride = orderPriceOverride !== null ? parseFloat(orderPriceOverride) : NaN;
-  const basePrice = !isNaN(totalMid) ? totalMid : totalCost;
-  const effectiveTotalCost = isNaN(parsedOverride)
-    ? basePrice
-    : directionSign * Math.abs(parsedOverride);
-
   const underlyingQuoteSymbol =
     selectedContractData?.streamerSymbol ??
     chain?.underlyingStreamerSymbol ??
@@ -191,13 +161,107 @@ export default function StrategyPage() {
   const underlyingQuote = quotes[underlyingQuoteSymbol];
   const currentPrice = underlyingQuote?.last ?? null;
 
+  // For call legs, derive price via put-call parity when dxFeed call quotes are stale
+  // (market makers pull call quotes after large index moves; puts stay fresh).
+  function getEffectiveQuote(leg: Leg): { bid: number; ask: number } | undefined {
+    const sym = legToSymbol(leg, symbolMap);
+    const directQ = sym ? quotes[sym] : undefined;
+    if (leg.type !== "Call" || currentPrice === null) return directQ;
+    const putSym = symbolMap[`${leg.expiration}|${leg.strike}|P`]?.streamer;
+    const putQ = putSym ? quotes[putSym] : undefined;
+    if (!putQ) return directQ;
+    const T = Math.max(0, (new Date(leg.expiration + "T16:00:00").getTime() - Date.now()) / (365.25 * 24 * 3600 * 1000));
+    const parityAdj = currentPrice * Math.exp(-0.013 * T) - leg.strike * Math.exp(-0.05 * T);
+    const parityBid = putQ.bid + parityAdj;
+    const parityAsk = putQ.ask + parityAdj;
+    if (!directQ) return { bid: Math.max(0, parityBid), ask: Math.max(0, parityAsk) };
+    const parityMid = (parityBid + parityAsk) / 2;
+    const directMid = (directQ.bid + directQ.ask) / 2;
+    if (Math.abs(directMid - parityMid) > 5) return { bid: Math.max(0, parityBid), ask: Math.max(0, parityAsk) };
+    return directQ;
+  }
+
+  // Per docs/Tastytrade_Pricing_Logic_Instruction.md:
+  //   Ask (price to BUY)  = Σ Long@Ask − Σ Short@Bid   (natural price, worst fills when buying)
+  //   Bid (price to SELL) = paired-vertical optimization when any leg is crossed;
+  //                         falls back to Σ Long@Bid − Σ Short@Ask in normal markets.
+  // Sign in this "long-positive" convention: positive = debit-natured, negative = credit-natured.
+  const calcSide = (longUsesAsk: boolean) =>
+    legs.reduce((sum, leg) => {
+      const q = getEffectiveQuote(leg);
+      if (!q) return NaN;
+      const isShort = leg.side === "Short";
+      const price = isShort
+        ? (longUsesAsk ? q.bid : q.ask)
+        : (longUsesAsk ? q.ask : q.bid);
+      return sum + (isShort ? -price : price) * leg.size;
+    }, 0);
+
+  // Tastytrade spread-optimization bid: decomposes into paired verticals and for each pair
+  // uses Long@Ask - Short@Ask (debit vertical) or Long@Ask - Short@Bid (credit vertical).
+  // This captures inversions in crossed legs, producing an inverted quote when warranted.
+  const calcOptimizedBid = (): number => {
+    const hasCrossed = legs.some(leg => {
+      const q = getEffectiveQuote(leg);
+      return q ? q.bid > q.ask : false;
+    });
+    if (!hasCrossed) return calcSide(false);
+
+    const longUnits: Array<{ q: { bid: number; ask: number }; mid: number }> = [];
+    const shortUnits: Array<{ q: { bid: number; ask: number }; mid: number }> = [];
+    for (const leg of legs) {
+      const q = getEffectiveQuote(leg);
+      if (!q) return NaN;
+      const mid = (q.bid + q.ask) / 2;
+      const arr = leg.side === "Long" ? longUnits : shortUnits;
+      for (let i = 0; i < leg.size; i++) arr.push({ q, mid });
+    }
+    if (!longUnits.length || !shortUnits.length) return calcSide(false);
+
+    const pairCount = Math.min(longUnits.length, shortUnits.length);
+    let sum = 0;
+    for (let i = 0; i < pairCount; i++) {
+      const lu = longUnits[i], su = shortUnits[i];
+      // Debit vertical (long mid >= short mid): Long@Ask - Short@Ask
+      // Credit vertical (long mid < short mid): Long@Ask - Short@Bid
+      sum += lu.q.ask - (lu.mid >= su.mid ? su.q.ask : su.q.bid);
+    }
+    // Unmatched units when total long qty ≠ total short qty
+    for (let i = pairCount; i < longUnits.length; i++) sum += longUnits[i].q.bid;
+    for (let i = pairCount; i < shortUnits.length; i++) sum -= shortUnits[i].q.ask;
+    return sum;
+  };
+
+  const totalAsk = calcSide(true);       // long@ask, short@bid (unchanged)
+  const totalBid = calcOptimizedBid();   // paired-vertical optimization
+  const totalMid =
+    isNaN(totalBid) || isNaN(totalAsk) ? NaN : (totalBid + totalAsk) / 2;
+
+  // Direction (credit/debit) is fixed by mid price; user only types the magnitude.
+  // totalMid uses long-positive convention; cashflow convention (used by buildOrderPayload)
+  // is the opposite sign, so flip when projecting Mid → order price.
+  const directionSign = isNaN(totalMid)
+    ? totalCost >= 0 ? 1 : -1
+    : totalMid <= 0 ? 1 : -1;
+
+  const parsedOverride = orderPriceOverride !== null ? parseFloat(orderPriceOverride) : NaN;
+  const basePrice = !isNaN(totalMid) ? -totalMid : totalCost;
+  const effectiveTotalCost = isNaN(parsedOverride)
+    ? basePrice
+    : directionSign * Math.abs(parsedOverride);
+
   const legSymbols = useMemo(
     () => legs.flatMap((leg) => {
       const sym = legToSymbol(leg, symbolMap);
-      return sym ? [sym] : [];
+      const syms: string[] = sym ? [sym] : [];
+      if (leg.type === "Call") {
+        const putSym = symbolMap[`${leg.expiration}|${leg.strike}|P`]?.streamer;
+        if (putSym) syms.push(putSym);
+      }
+      return syms;
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [legs.map((l) => legToSymbol(l, symbolMap)).join(",")],
+    [legs.map((l) => `${l.expiration}|${l.strike}|${l.type}`).join(",")],
   );
 
   useEffect(() => {
@@ -267,8 +331,7 @@ export default function StrategyPage() {
       let changed = false;
       const updated = list.map((leg) => {
         if (leg.price !== 0) return leg;
-        const sym = legToSymbol(leg, symbolMap);
-        const quote = sym ? quotes[sym] : undefined;
+        const quote = getEffectiveQuote(leg);
         if (!quote) return leg;
         const mid = (quote.bid + quote.ask) / 2;
         changed = true;
@@ -541,20 +604,25 @@ export default function StrategyPage() {
         {/* ── Bid / Mid / Ask — always visible, above legs ──────────────────── */}
         <div className="flex items-start justify-center gap-8 border-b-2 border-black/10 px-4 py-3 dark:border-white/10">
           {[
-            { label: "Bid", val: totalBid },
-            { label: "Mid", val: totalMid },
-            { label: "Ask", val: totalAsk },
-          ].map(({ label, val }) => (
-            <div key={label} className="flex flex-col items-center gap-0">
-              <span className="text-xs font-bold uppercase tracking-wider opacity-50">{label}</span>
-              <span className="font-mono text-sm font-bold">
-                {isNaN(val) ? "—" : `$${Math.abs(val).toFixed(2)}`}
-              </span>
-              {!isNaN(val) && (
-                <span className="text-xs opacity-40">{val >= 0 ? "cr" : "db"}</span>
-              )}
-            </div>
-          ))}
+            { label: "Bid", val: totalBid, sellSide: true },
+            { label: "Mid", val: totalMid, sellSide: false },
+            { label: "Ask", val: totalAsk, sellSide: false },
+          ].map(({ label, val, sellSide }) => {
+            // Bid measures sell proceeds (positive → credit received); Mid/Ask
+            // measure buy cost (positive → debit paid).
+            const isCredit = sellSide ? val >= 0 : val < 0;
+            return (
+              <div key={label} className="flex flex-col items-center gap-0">
+                <span className="text-xs font-bold uppercase tracking-wider opacity-50">{label}</span>
+                <span className="font-mono text-sm font-bold">
+                  {isNaN(val) ? "—" : `$${Math.abs(val).toFixed(2)}`}
+                </span>
+                {!isNaN(val) && (
+                  <span className="text-xs opacity-40">{isCredit ? "cr" : "db"}</span>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {/* ── Mobile card list (< sm) ──────────────────────────────────────── */}
@@ -569,8 +637,7 @@ export default function StrategyPage() {
             </div>
           )}
           {legs.map((leg) => {
-            const sym = legToSymbol(leg, symbolMap);
-            const quote = sym ? quotes[sym] : undefined;
+            const quote = getEffectiveQuote(leg);
             return (
               <LegCard
                 key={leg.id}
@@ -614,8 +681,7 @@ export default function StrategyPage() {
             </thead>
             <tbody>
               {legs.map((leg) => {
-                const sym = legToSymbol(leg, symbolMap);
-                const quote = sym ? quotes[sym] : undefined;
+                const quote = getEffectiveQuote(leg);
                 return (
                   <LegRow
                     key={leg.id}
