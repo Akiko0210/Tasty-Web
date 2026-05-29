@@ -308,7 +308,12 @@ export default function StrategyPage() {
 
     if (optionChainStatus === "ready") {
       setLegsByStrategy((prev) => {
-        if (prev[strategyKey]?.length) return prev;
+        const cached = prev[strategyKey];
+        if (cached?.length) {
+          const earliestAvailable = chainExpirations[0];
+          const hasExpired = earliestAvailable && cached.some((leg) => leg.expiration < earliestAvailable);
+          if (!hasExpired) return prev;
+        }
         const newLegs = toLegs(
           buildStrategyLegs(
             strategyConfigs[effectiveSelected!].name,
