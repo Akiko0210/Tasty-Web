@@ -260,8 +260,11 @@ export default function StrategyPage() {
       }
       return syms;
     }),
+    // symbolMap must be a dep: legs are restored from localStorage before the
+    // chain loads, so without it the memo stays stuck at [] (empty symbolMap)
+    // and the leg quotes are never subscribed on a cold first mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [legs.map((l) => `${l.expiration}|${l.strike}|${l.type}`).join(",")],
+    [legs.map((l) => `${l.expiration}|${l.strike}|${l.type}`).join(","), symbolMap],
   );
 
   useEffect(() => {

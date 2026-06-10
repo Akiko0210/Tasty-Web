@@ -8,31 +8,81 @@ for (const line of fs.readFileSync(envPath, "utf8").split("\n")) {
   const trimmed = line.trim();
   if (!trimmed || trimmed.startsWith("#")) continue;
   const [key, ...rest] = trimmed.split("=");
-  process.env[key.trim()] = rest.join("=").trim();
+  const val = rest.join("=").trim();
+  process.env[key.trim()] = val.replace(/^["']|["']$/g, "");
 }
 
 const BASE_URL = process.env.TASTY_BASE_URL;
 const REFRESH_TOKEN = process.env.REFRESH_TOKEN;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 
-// ── Fetch a fresh dxFeed token ────────────────────────────────────────────────
-async function getDxFeedToken() {
-  const tokenRes = await fetch(`${BASE_URL}/oauth/token`, {
+// ── Get OAuth access token ────────────────────────────────────────────────────
+async function getAccessToken() {
+  const res = await fetch(`${BASE_URL}/oauth/token`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "User-Agent": "my-app/1.0",
+    },
     body: JSON.stringify({
       grant_type: "refresh_token",
       refresh_token: REFRESH_TOKEN,
       client_secret: CLIENT_SECRET,
     }),
   });
-  const { access_token } = await tokenRes.json();
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(
+      `Token request failed ${res.status}: ${text.slice(0, 300)}`,
+    );
+  }
+  const { access_token } = await res.json();
+  return access_token;
+}
 
+// ── Fetch a fresh dxFeed token ────────────────────────────────────────────────
+async function getDxFeedToken(accessToken) {
   const quoteRes = await fetch(`${BASE_URL}/api-quote-tokens`, {
-    headers: { Authorization: `Bearer ${access_token}` },
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "User-Agent": "my-app/1.0",
+    },
   });
+  if (!quoteRes.ok) {
+    const text = await quoteRes.text();
+    throw new Error(
+      `Quote token request failed ${quoteRes.status}: ${text.slice(0, 300)}`,
+    );
+  }
   const { data } = await quoteRes.json();
   return { url: data["dxlink-url"], token: data.token };
+}
+
+// ── Test /market-metrics for RUT ──────────────────────────────────────────────
+async function testMarketMetrics(accessToken) {
+  const urls = [
+    `${BASE_URL}/market-metrics?symbols[]=RUT&symbols[]=SPX`,
+    `${BASE_URL}/market-metrics?symbols=RUT,SPX`,
+    `${BASE_URL}/market-metrics?symbols=RUT&symbols=SPX`,
+  ];
+
+  for (const url of urls) {
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "User-Agent": "my-app/1.0",
+      },
+    });
+    const text = await res.text();
+    console.log(`\n[market-metrics] ${url.split("?")[1]}`);
+    console.log(`  status: ${res.status}`);
+    try {
+      console.log("  body:", JSON.stringify(JSON.parse(text), null, 2));
+    } catch {
+      console.log(`  body: ${text || "(empty)"}`);
+    }
+  }
 }
 
 // ── Stream quotes ─────────────────────────────────────────────────────────────
@@ -131,11 +181,14 @@ const SYMBOLS = [
   ".SPX260515C6800",
   ".SPX",
   "SPX",
+  "IWM",
 ];
 
-getDxFeedToken()
-  .then(({ url, token }) => {
-    console.log("Got fresh token, connecting to", url);
+getAccessToken()
+  .then(async (accessToken) => {
+    await testMarketMetrics(accessToken);
+    const { url, token } = await getDxFeedToken(accessToken);
+    console.log("\nGot fresh token, connecting to", url);
     const stop = streamQuotes(
       url,
       token,

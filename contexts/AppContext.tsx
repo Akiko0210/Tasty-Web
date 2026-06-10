@@ -31,45 +31,44 @@ export interface Quote {
 function useQuoteStream(symbols: string[]): Record<string, Quote> {
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const wsRef = useRef<WebSocket | null>(null);
-  const symbolsRef = useRef(symbols);
-  const channelOpenRef = useRef(false);
-  const cancelledRef = useRef(false);
+  // React state (not a ref) so the subscription effect below re-runs the moment
+  // the channel opens — making the first subscription deterministic regardless
+  // of whether the socket or the option-chain fetch wins the startup race.
+  const [channelOpen, setChannelOpen] = useState(false);
   const symbolsKey = symbols.join(",");
 
+  // ── Connection lifecycle — runs once per mount ──
+  // `cancelled`, `ws`, and `reconnectTimer` are local to each effect invocation,
+  // so the cleanup closes the exact socket this run created and the StrictMode
+  // double-mount can't leak an orphaned, forever-reconnecting socket.
   useEffect(() => {
-    symbolsRef.current = symbols;
-  });
-
-  useEffect(() => {
-    if (!channelOpenRef.current || !wsRef.current) return;
-    wsRef.current.send(
-      JSON.stringify({
-        type: "FEED_SUBSCRIPTION",
-        channel: 1,
-        reset: true,
-        add: [
-          ...symbols.map((s) => ({ type: "Quote", symbol: s })),
-          ...symbols.map((s) => ({ type: "Trade", symbol: s })),
-        ],
-      }),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbolsKey]);
-
-  useEffect(() => {
-    cancelledRef.current = false;
+    let cancelled = false;
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
     async function connect() {
-      if (cancelledRef.current) return;
-      const { "dxlink-url": url, token: initialToken } = await getQuotes();
-      if (cancelledRef.current) return;
+      if (cancelled) return;
+
+      let url: string;
+      let initialToken: string;
+      try {
+        const res = await getQuotes();
+        url = res["dxlink-url"];
+        initialToken = res.token;
+      } catch (e) {
+        console.error("Failed to get quote token:", e);
+        if (!cancelled) reconnectTimer = setTimeout(connect, 3000);
+        return;
+      }
+      if (cancelled) return;
 
       let currentToken = initialToken;
-      const ws = new WebSocket(url);
+      ws = new WebSocket(url);
       wsRef.current = ws;
+      const socket = ws;
 
-      ws.onopen = () => {
-        ws.send(
+      socket.onopen = () => {
+        socket.send(
           JSON.stringify({
             type: "SETUP",
             channel: 0,
@@ -80,14 +79,14 @@ function useQuoteStream(symbols: string[]): Record<string, Quote> {
         );
       };
 
-      ws.onmessage = async (event) => {
+      socket.onmessage = async (event) => {
         const msg = JSON.parse(event.data as string);
 
         if (msg.type === "SETUP") {
-          ws.send(JSON.stringify({ type: "AUTH", channel: 0, token: currentToken }));
+          socket.send(JSON.stringify({ type: "AUTH", channel: 0, token: currentToken }));
         } else if (msg.type === "AUTH_STATE") {
           if (msg.state === "AUTHORIZED") {
-            ws.send(
+            socket.send(
               JSON.stringify({
                 type: "CHANNEL_REQUEST",
                 channel: 1,
@@ -99,36 +98,27 @@ function useQuoteStream(symbols: string[]): Record<string, Quote> {
             try {
               const { token: newToken } = await getQuotes();
               currentToken = newToken;
-              ws.send(JSON.stringify({ type: "AUTH", channel: 0, token: currentToken }));
+              socket.send(JSON.stringify({ type: "AUTH", channel: 0, token: currentToken }));
             } catch (e) {
               console.error("Failed to refresh quote token:", e);
             }
           }
         } else if (msg.type === "CHANNEL_OPENED" && msg.channel === 1) {
-          channelOpenRef.current = true;
-          ws.send(
+          socket.send(
             JSON.stringify({
               type: "FEED_SETUP",
               channel: 1,
               acceptAggregationPeriod: 0,
               acceptDataFormat: "COMPACT",
               acceptEventFields: {
-            Quote: ["eventSymbol", "bidPrice", "askPrice"],
-            Trade: ["eventSymbol", "price"],
-          },
+                Quote: ["eventSymbol", "bidPrice", "askPrice"],
+                Trade: ["eventSymbol", "price"],
+              },
             }),
           );
-          ws.send(
-            JSON.stringify({
-              type: "FEED_SUBSCRIPTION",
-              channel: 1,
-              reset: true,
-              add: [
-                ...symbolsRef.current.map((s) => ({ type: "Quote", symbol: s })),
-                ...symbolsRef.current.map((s) => ({ type: "Trade", symbol: s })),
-              ],
-            }),
-          );
+          // Hand off to the subscription effect, which subscribes to the
+          // current symbols (FEED_SETUP above is sent first, so ordering holds).
+          if (!cancelled) setChannelOpen(true);
         } else if (msg.type === "FEED_DATA") {
           const [eventType, values] = msg.data as [string, (string | number)[]];
           if (eventType === "Quote") {
@@ -151,26 +141,46 @@ function useQuoteStream(symbols: string[]): Record<string, Quote> {
             });
           }
         } else if (msg.type === "KEEPALIVE") {
-          ws.send(JSON.stringify({ type: "KEEPALIVE", channel: 0 }));
+          socket.send(JSON.stringify({ type: "KEEPALIVE", channel: 0 }));
         }
       };
 
-      ws.onerror = (e) => console.error("WebSocket error:", e);
-      ws.onclose = () => {
-        channelOpenRef.current = false;
-        if (!cancelledRef.current) setTimeout(connect, 3000);
+      socket.onerror = (e) => console.error("WebSocket error:", e);
+      socket.onclose = () => {
+        setChannelOpen(false);
+        if (!cancelled) reconnectTimer = setTimeout(connect, 3000);
       };
     }
 
     connect();
 
     return () => {
-      cancelledRef.current = true;
-      channelOpenRef.current = false;
-      wsRef.current?.close();
-      wsRef.current = null;
+      cancelled = true;
+      setChannelOpen(false);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      ws?.close();
+      if (wsRef.current === ws) wsRef.current = null;
     };
   }, []);
+
+  // ── Subscription — re-runs whenever the symbol set changes OR the channel
+  // (re)opens. This single source of truth replaces the old inline-subscribe +
+  // ref-guarded effect, removing the startup race that left the first mount blank.
+  useEffect(() => {
+    if (!channelOpen || !wsRef.current) return;
+    wsRef.current.send(
+      JSON.stringify({
+        type: "FEED_SUBSCRIPTION",
+        channel: 1,
+        reset: true,
+        add: [
+          ...symbols.map((s) => ({ type: "Quote", symbol: s })),
+          ...symbols.map((s) => ({ type: "Trade", symbol: s })),
+        ],
+      }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbolsKey, channelOpen]);
 
   return quotes;
 }
