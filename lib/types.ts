@@ -1,5 +1,6 @@
 export type Side = "Short" | "Long";
 export type OptionType = "Call" | "Put";
+export type OpenClose = "Open" | "Close";
 
 export interface Leg {
   id: string;
@@ -12,6 +13,9 @@ export interface Leg {
   visible?: boolean;
   status: string;
   daysToExpiry?: number;
+  // Absent = "Open" (legs built in the ticket open positions by default;
+  // "Close" comes only from the Opposite flow on a filled opening order).
+  openClose?: OpenClose;
 }
 
 export interface StrategyConfig {

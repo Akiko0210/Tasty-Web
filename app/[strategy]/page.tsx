@@ -398,6 +398,8 @@ export default function StrategyPage() {
     const syncExpiry =
       updates.expiration !== undefined && !MULTI_EXPIRY_STRATEGIES.has(strategyName);
 
+    // Edited "Close" legs keep their closing action even if they no longer
+    // match an opened position — the dry run surfaces a warning for those.
     setLegsByStrategy((prev) => {
       const list = prev[strategyKey] ?? [];
       const syncType =
@@ -460,6 +462,8 @@ export default function StrategyPage() {
       visible: true,
       status: "Working",
       daysToExpiry: 16,
+      // A freshly added leg has no opened position behind it — always opens.
+      openClose: "Open",
     };
     setLegsByStrategy((prev) => ({
       ...prev,

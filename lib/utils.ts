@@ -26,6 +26,26 @@ export function toLegs(
   });
 }
 
+// Full TastyTrade action string for a leg (BTO/STO/BTC/STC).
+export function legAction(
+  leg: Pick<Leg, "side" | "openClose">,
+): "Buy to Open" | "Sell to Open" | "Buy to Close" | "Sell to Close" {
+  const isClose = leg.openClose === "Close";
+  return leg.side === "Long"
+    ? isClose ? "Buy to Close" : "Buy to Open"
+    : isClose ? "Sell to Close" : "Sell to Open";
+}
+
+// Short action code for display (BTO/STO/BTC/STC).
+export function legActionCode(
+  leg: Pick<Leg, "side" | "openClose">,
+): "BTO" | "STO" | "BTC" | "STC" {
+  const isClose = leg.openClose === "Close";
+  return leg.side === "Long"
+    ? isClose ? "BTC" : "BTO"
+    : isClose ? "STC" : "STO";
+}
+
 // Looks up the dxFeed streamer symbol for a leg from the option chain symbol map.
 export function legToSymbol(
   leg: Leg,
@@ -65,7 +85,7 @@ export function buildOrderPayload(
         "instrument-type": occ.startsWith("./") ? "Future Option" : "Equity Option",
         symbol: occ,
         quantity: leg.size,
-        action: leg.side === "Long" ? "Buy to Open" : "Sell to Open",
+        action: legAction(leg),
       };
     }),
   };

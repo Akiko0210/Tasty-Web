@@ -5,13 +5,12 @@ import { useRouter } from "next/navigation";
 import type { Leg, Order } from "@/lib/types";
 import { useApp } from "@/contexts/AppContext";
 import { cancelOrder } from "@/api/cancelOrder";
-import { strategyToSlug } from "@/lib/utils";
+import { strategyToSlug, legActionCode } from "@/lib/utils";
 
 function formatLegDescription(leg: Leg): string {
   const qty = leg.side === "Long" ? leg.size : -leg.size;
   const d = leg.daysToExpiry ?? 0;
-  const action = leg.side === "Short" ? "STO" : "BTO";
-  return `${qty} ${leg.expiration} ${d}d ${leg.strike} ${leg.type[0]} ${action}`;
+  return `${qty} ${leg.expiration} ${d}d ${leg.strike} ${leg.type[0]}`;
 }
 
 function formatPrice(totalCost: number): { text: string; isCredit: boolean } {
@@ -53,20 +52,19 @@ const STATUS_FILTER_OPTIONS = [
 ];
 
 function LegDescription({ leg }: { leg: Leg }) {
-  const desc = formatLegDescription(leg);
-  const isSto = desc.endsWith("STO");
-  const base = desc.replace(/\s(STO|BTO)$/, "");
+  const action = legActionCode(leg);
+  const isSell = leg.side === "Short";
   return (
     <span className="font-mono text-xs">
-      {base}{" "}
+      {formatLegDescription(leg)}{" "}
       <span
         className={
-          isSto
+          isSell
             ? "text-red-600 dark:text-red-400"
             : "text-green-600 dark:text-green-400"
         }
       >
-        {isSto ? "STO" : "BTO"}
+        {action}
       </span>
     </span>
   );
@@ -299,6 +297,8 @@ export default function OrdersView() {
     closeContextMenu();
   }
 
+  // Opposite of an opening order closes the opened position: flip the side and
+  // mark every leg "Close" (BTO→STC, STO→BTC). Closing orders have no opposite.
   function handleOpposite(order: Order) {
     setPrefilledOrder({
       symbol: order.symbol,
@@ -306,6 +306,7 @@ export default function OrdersView() {
       legs: order.legs.map((leg) => ({
         ...leg,
         side: leg.side === "Long" ? ("Short" as const) : ("Long" as const),
+        openClose: "Close" as const,
       })),
       tif: order.tif as "Day" | "GTC",
       totalCost: -order.totalCost,
@@ -568,13 +569,16 @@ export default function OrdersView() {
               >
                 Similar
               </button>
-              <button
-                type="button"
-                onClick={() => handleOpposite(contextMenu.order)}
-                className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10"
-              >
-                Opposite
-              </button>
+              {/* A closing order has no opposite — you can't "re-open" via opposite */}
+              {!contextMenu.order.legs.some((l) => l.openClose === "Close") && (
+                <button
+                  type="button"
+                  onClick={() => handleOpposite(contextMenu.order)}
+                  className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10"
+                >
+                  Opposite
+                </button>
+              )}
               {contextMenu.order.status === "Working" && (
                 <>
                   <div className="mx-3 my-1 border-t border-black/10 dark:border-white/10" />

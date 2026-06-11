@@ -1,6 +1,7 @@
 "use client";
 
 import type { Order, DryRunResult } from "@/lib/types";
+import { legActionCode } from "@/lib/utils";
 
 const shortDate = (iso: string) => {
   const d = new Date(iso + "T00:00:00");
@@ -108,7 +109,7 @@ export function OrderConfirmModal({
                           : "text-red-600 dark:text-red-400"
                       }`}
                     >
-                      {leg.side === "Long" ? "BTO" : "STO"}
+                      {legActionCode(leg)}
                     </span>
                   </td>
                   <td className="py-2 font-medium">{leg.type}</td>

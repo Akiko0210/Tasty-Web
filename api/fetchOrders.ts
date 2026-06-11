@@ -105,7 +105,8 @@ function parseOccSymbol(sym: string) {
 
 function mapLeg(leg: RawLeg, i: number, j: number) {
   const parsed = parseOccSymbol(leg.symbol);
-  const isSell = leg.action.toLowerCase().startsWith("sell");
+  const action = leg.action.toLowerCase();
+  const isSell = action.startsWith("sell");
   return {
     id: `leg-${i}-${j}`,
     strike: parsed.strike,
@@ -116,6 +117,7 @@ function mapLeg(leg: RawLeg, i: number, j: number) {
     price: 0,
     status: "Working" as const,
     daysToExpiry: parsed.daysToExpiry,
+    openClose: action.includes("close") ? ("Close" as const) : ("Open" as const),
   };
 }
 
