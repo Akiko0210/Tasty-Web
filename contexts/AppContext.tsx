@@ -7,6 +7,7 @@ import {
   useEffect,
   useRef,
   useCallback,
+  useMemo,
   ReactNode,
   Dispatch,
   SetStateAction,
@@ -228,6 +229,9 @@ interface AppContextType {
   // Quotes
   quotes: Record<string, Quote>;
   setQuoteSymbols: Dispatch<SetStateAction<string[]>>;
+  // Ad-hoc quote subscription that survives page-driven setQuoteSymbols resets
+  // (used by the voice agent to answer "what's the price of X").
+  addPinnedSymbol: (streamerSymbol: string) => void;
   // Watchlist
   watchlist: string[];
   saveWatchlist: (symbols: string[]) => Promise<void>;
@@ -251,9 +255,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Option chain — cached per symbol
   const [chainCache, setChainCache] = useState<Record<string, ChainData>>({});
 
-  // Quotes
+  // Quotes — the live subscription is the union of the page-set symbols and any
+  // "pinned" symbols the voice agent has asked about, so ad-hoc price queries
+  // don't get wiped when a page resets its own symbol set.
   const [quoteSymbols, setQuoteSymbols] = useState<string[]>(["SPX"]);
-  const quotes = useQuoteStream(quoteSymbols);
+  const [pinnedSymbols, setPinnedSymbols] = useState<string[]>([]);
+  const subscribedSymbols = useMemo(
+    () => Array.from(new Set([...quoteSymbols, ...pinnedSymbols])),
+    [quoteSymbols, pinnedSymbols],
+  );
+  const quotes = useQuoteStream(subscribedSymbols);
+  const addPinnedSymbol = useCallback((streamerSymbol: string) => {
+    setPinnedSymbols((prev) => (prev.includes(streamerSymbol) ? prev : [...prev, streamerSymbol]));
+  }, []);
 
   // Watchlist — persisted server-side
   const [watchlist, setWatchlist] = useState<string[]>([]);
@@ -381,6 +395,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         fetchOptionChainForSymbol,
         quotes,
         setQuoteSymbols,
+        addPinnedSymbol,
         watchlist,
         saveWatchlist,
         ordersState,

@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { Leg, Order } from "@/lib/types";
 import { useApp } from "@/contexts/AppContext";
 import { cancelOrder } from "@/api/cancelOrder";
 import { strategyToSlug, legActionCode } from "@/lib/utils";
+import { useRegisterVoiceOrders } from "@/contexts/VoiceContext";
+import type { VoiceOrdersApi, VoiceOrdersFilter } from "@/lib/voice/types";
 
 function formatLegDescription(leg: Leg): string {
   const qty = leg.side === "Long" ? leg.size : -leg.size;
@@ -177,6 +179,22 @@ export default function OrdersView() {
   const defaultRange = getDefaultDateRange();
   const displayDateStart = dateStart || (mounted ? defaultRange.start : "");
   const displayDateEnd = dateEnd || (mounted ? defaultRange.end : "");
+
+  // Voice agent filter API — updated each render so setters always close over current state
+  const voiceImplRef = useRef<{ setFilter: (f: VoiceOrdersFilter) => void }>(null!);
+  voiceImplRef.current = {
+    setFilter: ({ status, symbol, dateStart: ds, dateEnd: de }) => {
+      if (status !== undefined) setStatusFilter(status || "All");
+      if (symbol !== undefined) setSymbolFilter(symbol);
+      if (ds !== undefined) setDateStart(ds);
+      if (de !== undefined) setDateEnd(de);
+    },
+  };
+  const voiceOrdersApi = useMemo<VoiceOrdersApi>(
+    () => ({ setFilter: (f) => { voiceImplRef.current.setFilter(f); return { ok: true, message: "Filter applied." }; } }),
+    [],
+  );
+  useRegisterVoiceOrders(voiceOrdersApi);
 
   useEffect(() => {
     setMounted(true);

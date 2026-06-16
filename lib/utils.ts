@@ -113,6 +113,19 @@ export function resolveStrikeOnExpChange(
   );
 }
 
+// Returns the available expiration closest to a target ISO date. Used by the
+// voice agent to snap a spoken date onto a real, tradable expiration.
+export function nearestExpiration(targetIso: string, expirations: string[]): string {
+  if (!expirations.length) return targetIso;
+  const target = new Date(targetIso + "T00:00:00").getTime();
+  if (isNaN(target)) return expirations[0];
+  return expirations.reduce((best, exp) => {
+    const dExp = Math.abs(new Date(exp + "T00:00:00").getTime() - target);
+    const dBest = Math.abs(new Date(best + "T00:00:00").getTime() - target);
+    return dExp < dBest ? exp : best;
+  });
+}
+
 // Returns the index of the strike closest to the given price.
 export function findAtmIndex(strikes: number[], price: number): number {
   return strikes.reduce(

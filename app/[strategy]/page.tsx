@@ -1,11 +1,14 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import type { Leg, Order, OptionType, Side } from "@/lib/types";
 import { strategyConfigs, UNDERLYING_QUOTE_SYMBOL, FUTURES_SYMBOLS, FUTURES_MULTIPLIER } from "@/lib/constants";
-import { toLegs, calculateTotalCost, legToSymbol, buildStrategyLegs, buildOrderPayload, resolveStrikeOnExpChange, strategyToSlug, slugToStrategyIndex } from "@/lib/utils";
+import { toLegs, calculateTotalCost, legToSymbol, buildStrategyLegs, buildOrderPayload, resolveStrikeOnExpChange, nearestExpiration, strategyToSlug, slugToStrategyIndex } from "@/lib/utils";
 import { useApp } from "@/contexts/AppContext";
+import { useRegisterVoiceTicket } from "@/contexts/VoiceContext";
+import type { VoiceTicketApi, VoiceTicketState, VoiceResult } from "@/lib/voice/types";
+import { describeTicket, money, spokenSymbol } from "@/lib/voice/format";
 import type { FuturesContract } from "@/contexts/AppContext";
 import { MULTI_EXPIRY_STRATEGIES } from "@/lib/constants";
 import type { OrderPayload, DryRunResult } from "@/lib/types";
@@ -348,6 +351,204 @@ export default function StrategyPage() {
       return changed ? { ...prev, [strategyKey]: updated } : prev;
     });
   }, [quotes, strategyKey, selectedSymbol]);
+
+  // ── Voice agent ticket API ──────────────────────────────────────────────────
+  // The implementations close over the current render's state and setters and are
+  // refreshed into a ref every render, so the stable `voiceApi` the global agent
+  // holds always invokes the latest closures — no stale state, no re-registration.
+  const voiceImplRef = useRef<{
+    getState: () => VoiceTicketState;
+    setSymbol: (s: string) => VoiceResult;
+    buildStrategy: (a: { strategyName: string; optionType?: OptionType; strikes: number[]; expiration?: string }) => VoiceResult;
+    setLimitPrice: (p: number) => VoiceResult;
+    setTif: (t: "Day" | "GTC") => VoiceResult;
+    setSize: (n: number) => VoiceResult;
+    submit: () => Promise<VoiceResult>;
+    confirm: () => Promise<VoiceResult>;
+    cancelPending: () => VoiceResult;
+  }>(null!);
+
+  voiceImplRef.current = {
+    getState: () => ({
+      symbol: selectedSymbol,
+      strategyName: effectiveSelected !== null ? strategyConfigs[effectiveSelected].name : null,
+      legs,
+      bid: totalBid,
+      mid: totalMid,
+      ask: totalAsk,
+      limitPrice: Math.abs(effectiveTotalCost),
+      limitEffect: directionSign >= 0 ? "credit" : "debit",
+      tif,
+      currentPrice,
+      chainReady: optionChainStatus === "ready",
+      expirations: chainExpirations,
+      hasPending: pendingOrder !== null,
+    }),
+
+    setSymbol: (sym) => {
+      if (watchlist.length && !watchlist.includes(sym)) {
+        return { ok: false, message: `${spokenSymbol(sym)} isn't in your watchlist. Add it from the dashboard first.` };
+      }
+      setSelectedSymbol(sym);
+      return { ok: true, message: `Switched to ${spokenSymbol(sym)}.` };
+    },
+
+    buildStrategy: ({ strategyName, optionType, strikes, expiration }) => {
+      if (optionChainStatus !== "ready") {
+        return { ok: false, message: `The option chain for ${spokenSymbol(selectedSymbol)} is still loading. Please try again in a moment.` };
+      }
+      const idx = strategyConfigs.findIndex((c) => c.name === strategyName);
+      if (idx < 0) return { ok: false, message: `I don't know the strategy ${strategyName}.` };
+      if (!chainExpirations.length) return { ok: false, message: "No expirations are available for this symbol." };
+
+      const exp = expiration ? nearestExpiration(expiration, chainExpirations) : chainExpirations[0];
+      // Chosen expiration goes first: single-expiry strategies build entirely on
+      // it, multi-expiry strategies use it as their near leg.
+      const reordered = [exp, ...chainExpirations.filter((e) => e !== exp)];
+      const template = buildStrategyLegs(strategyName, strikesByExpiration, reordered, currentPrice);
+      if (!template.length) return { ok: false, message: `I couldn't build a ${strategyName} right now.` };
+
+      const multiExpiry = MULTI_EXPIRY_STRATEGIES.has(strategyName);
+      const mixedType =
+        strategyName === "Iron Condor" || strategyName === "Iron Butterfly" || strategyName === "Double Diagonal";
+      const expFor = (leg: { expiration: string }) => (multiExpiry ? leg.expiration : exp);
+
+      // Map spoken strikes onto the template. Single-expiry strategies align by
+      // ascending strike (lowest spoken → lowest leg) so each leg keeps its role;
+      // otherwise apply positionally.
+      const strikeByIndex: Record<number, number> = {};
+      if (strikes.length && !multiExpiry) {
+        const order = template.map((l, i) => ({ i, strike: l.strike })).sort((a, b) => a.strike - b.strike);
+        const sorted = [...strikes].sort((a, b) => a - b);
+        order.forEach((o, rank) => {
+          const k = sorted[rank] ?? sorted[sorted.length - 1];
+          strikeByIndex[o.i] = resolveStrikeOnExpChange(exp, k, strikesByExpiration);
+        });
+      } else {
+        template.forEach((l, i) => {
+          const k = strikes[i];
+          strikeByIndex[i] = k != null ? resolveStrikeOnExpChange(expFor(l), k, strikesByExpiration) : l.strike;
+        });
+      }
+
+      const newLegs = toLegs(
+        template.map((leg, i) => ({
+          ...leg,
+          expiration: expFor(leg),
+          strike: strikeByIndex[i],
+          type: optionType && !mixedType ? optionType : leg.type,
+          price: 0,
+        })),
+      );
+
+      const key = `${selectedSymbol}-${activeContract ?? ""}-${idx}`;
+      setSelected(idx);
+      setOrderPriceOverride(null);
+      setDryRunError(null);
+      setLegsByStrategy((prev) => ({ ...prev, [key]: newLegs }));
+      return { ok: true, message: describeTicket(strategyName, selectedSymbol, newLegs) };
+    },
+
+    setLimitPrice: (price) => {
+      if (!isFinite(price)) return { ok: false, message: "I didn't catch the limit price." };
+      if (!strategyKey || !legs.length) return { ok: false, message: "There's no active order to price." };
+      setOrderPriceOverride(Math.abs(price).toFixed(2));
+      return { ok: true, message: `Limit price set to ${money(price)} ${directionSign >= 0 ? "credit" : "debit"}.` };
+    },
+
+    setTif: (t) => {
+      setTif(t);
+      return { ok: true, message: `Time in force set to ${t === "GTC" ? "good til cancelled" : "day"}.` };
+    },
+
+    setSize: (n) => {
+      if (!strategyKey || !legs.length) return { ok: false, message: "There's no active order." };
+      if (!Number.isFinite(n) || n < 1) return { ok: false, message: "Quantity must be at least one." };
+      const minSize = Math.min(...legs.map((l) => l.size)) || 1;
+      setOrderPriceOverride(null);
+      setLegsByStrategy((prev) => {
+        const list = prev[strategyKey] ?? [];
+        return { ...prev, [strategyKey]: list.map((l) => ({ ...l, size: Math.max(1, Math.round((l.size / minSize) * n)) })) };
+      });
+      return { ok: true, message: `Quantity set to ${n}.` };
+    },
+
+    submit: async () => {
+      if (!strategyKey || legs.length === 0 || effectiveSelected === null) {
+        return { ok: false, message: "There's no active strategy order to place." };
+      }
+      try {
+        const payload = buildOrderPayload(legs, symbolMap, effectiveTotalCost, tif);
+        const dryRun = await dryRunOrder(payload);
+        const order: Order = {
+          id: `order-${Math.random().toString(36).substring(2, 9)}-${Date.now()}`,
+          symbol: selectedSymbol,
+          strategyName: strategyConfigs[effectiveSelected].name,
+          status: "Working",
+          orderNumber: `#${Math.floor(100000000 + Math.random() * 900000000)}`,
+          tif,
+          legs: legs.map((l) => ({ ...l, daysToExpiry: l.daysToExpiry ?? 16 })),
+          updatedAt: new Date(),
+          totalCost: effectiveTotalCost * (FUTURES_MULTIPLIER[selectedSymbol] ?? 100),
+        };
+        setPendingOrder({ order, payload, dryRun });
+        const premium = `${money(order.totalCost / 100)} ${order.totalCost > 0 ? "credit" : "debit"}`;
+        const fees = Number(dryRun["fee-calculation"]?.["total-fees"] ?? 0);
+        const bpChange = Number(dryRun["buying-power-effect"]?.["change-in-buying-power"] ?? 0);
+        const warnings = dryRun.warnings ?? [];
+        const parts = [
+          `Ready to place ${order.strategyName} on ${spokenSymbol(selectedSymbol)} for ${premium}.`,
+          `Buying power effect ${money(bpChange)}.`,
+        ];
+        if (fees > 0) parts.push(`Fees ${money(fees)}.`);
+        if (warnings.length) parts.push(`Warning: ${warnings.map((w) => w.message).join("; ")}.`);
+        parts.push("Say confirm to place it, or cancel.");
+        return { ok: true, message: parts.join(" ") };
+      } catch (err) {
+        return { ok: false, message: err instanceof Error ? err.message : "The dry run failed." };
+      }
+    },
+
+    confirm: async () => {
+      if (!pendingOrder) return { ok: false, message: "There's no order waiting for confirmation." };
+      try {
+        if (replaceOrderId) {
+          await replaceOrder(replaceOrderId, pendingOrder.payload);
+          setReplaceOrderId(null);
+        } else {
+          await submitOrder(pendingOrder.payload);
+        }
+        setBalance((prev: number) => prev + pendingOrder.order.totalCost);
+        const name = pendingOrder.order.strategyName;
+        setPendingOrder(null);
+        return { ok: true, message: `Order placed. Your ${name} is working.` };
+      } catch (err) {
+        return { ok: false, message: err instanceof Error ? err.message : "Order submission failed." };
+      }
+    },
+
+    cancelPending: () => {
+      setPendingOrder(null);
+      setSubmitError(null);
+      return { ok: true, message: "Order cancelled." };
+    },
+  };
+
+  const voiceApi = useMemo<VoiceTicketApi>(
+    () => ({
+      getState: () => voiceImplRef.current.getState(),
+      setSymbol: (s) => voiceImplRef.current.setSymbol(s),
+      buildStrategy: (a) => voiceImplRef.current.buildStrategy(a),
+      setLimitPrice: (p) => voiceImplRef.current.setLimitPrice(p),
+      setTif: (t) => voiceImplRef.current.setTif(t),
+      setSize: (n) => voiceImplRef.current.setSize(n),
+      submit: () => voiceImplRef.current.submit(),
+      confirm: () => voiceImplRef.current.confirm(),
+      cancelPending: () => voiceImplRef.current.cancelPending(),
+    }),
+    [],
+  );
+  useRegisterVoiceTicket(voiceApi);
 
   if (optionChainStatus === "loading") {
     return (

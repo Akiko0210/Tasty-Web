@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AppProvider } from "@/contexts/AppContext";
+import { VoiceProvider } from "@/contexts/VoiceContext";
 import { Sidebar } from "@/components/Sidebar";
+import { VoiceAgent } from "@/components/VoiceAgent";
 import { strategyConfigs } from "@/lib/constants";
 
 const geistSans = Geist({
@@ -31,10 +33,13 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <AppProvider>
-          <div className="flex overflow-x-hidden bg-white font-sans text-black dark:bg-black dark:text-white">
-            <Sidebar strategies={strategyConfigs} />
-            <main className="min-w-0 flex-1 pt-14 lg:ml-64 lg:pt-0">{children}</main>
-          </div>
+          <VoiceProvider>
+            <div className="flex overflow-x-hidden bg-white font-sans text-black dark:bg-black dark:text-white">
+              <Sidebar strategies={strategyConfigs} />
+              <main className="min-w-0 flex-1 pt-14 lg:ml-64 lg:pt-0">{children}</main>
+            </div>
+            <VoiceAgent />
+          </VoiceProvider>
         </AppProvider>
       </body>
     </html>
