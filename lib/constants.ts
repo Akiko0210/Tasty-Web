@@ -33,6 +33,17 @@ export const MULTI_EXPIRY_STRATEGIES = new Set([
   "Double Diagonal",
 ]);
 
+// Strategies where certain legs must share a strike price (see docs/identifyStrategy.md).
+// Each inner array is a group of leg indices — positions in buildStrategyLegs order —
+// that are locked together: editing the strike of any leg in the group moves the others
+// (snapped to each leg's own expiration). Strategies absent here have all-distinct strikes.
+export const STRIKE_LOCKED_GROUPS: Record<string, number[][]> = {
+  "Long Straddle": [[0, 1]], // Call & Put both at the ATM strike
+  "Short Straddle": [[0, 1]], // Call & Put both at the ATM strike
+  "Calendar Spread": [[0, 1]], // near & far leg share the strike (differ only by expiry)
+  "Iron Butterfly": [[1, 2]], // body: short Put & short Call at the middle strike B
+};
+
 export const strategyConfigs: StrategyConfig[] = [
   // Single leg
   { name: "Long Call" },

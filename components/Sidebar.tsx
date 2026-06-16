@@ -17,9 +17,18 @@ export function Sidebar({ strategies }: SidebarProps) {
   const router = useRouter();
   const pathname = usePathname();
   const isOrders = pathname === "/orders";
+  const isPositions = pathname === "/positions";
   const isDashboard = pathname === "/dashboard";
   const isStrategy = slugToStrategyIndex(pathname.slice(1)) >= 0;
-  const active = isOrders ? "orders" : isDashboard ? "dashboard" : isStrategy ? "strategy" : "none";
+  const active = isOrders
+    ? "orders"
+    : isPositions
+      ? "positions"
+      : isDashboard
+        ? "dashboard"
+        : isStrategy
+          ? "strategy"
+          : "none";
   const [mobileOpen, setMobileOpen] = useState(false);
 
   function navigate(path: string) {
@@ -102,6 +111,13 @@ export function Sidebar({ strategies }: SidebarProps) {
             className={`mb-2 ${navButtonClass(active === "strategy")}`}
           >
             Strategies
+          </button>
+          <button
+            type="button"
+            onClick={() => { setSelected(null); navigate("/positions"); }}
+            className={`mb-2 ${navButtonClass(active === "positions")}`}
+          >
+            Positions
           </button>
           <button
             type="button"

@@ -283,7 +283,14 @@ export function VoiceAgent() {
         }
         case "navigate": {
           const to = input.to;
-          const path = to === "orders" ? "/orders" : to === "dashboard" ? "/dashboard" : "/long-call";
+          const path =
+            to === "orders"
+              ? "/orders"
+              : to === "positions"
+                ? "/positions"
+                : to === "dashboard"
+                  ? "/dashboard"
+                  : "/long-call";
           router.push(path);
           return J({ ok: true });
         }

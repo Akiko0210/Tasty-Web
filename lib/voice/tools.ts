@@ -160,7 +160,7 @@ export const TOOL_DEFINITIONS = [
     description: "Move the user to a different page of the app.",
     input_schema: {
       type: "object",
-      properties: { to: { type: "string", enum: ["orders", "dashboard", "strategies"], description: "Destination page." } },
+      properties: { to: { type: "string", enum: ["orders", "positions", "dashboard", "strategies"], description: "Destination page. 'positions' shows current open positions and their P/L; 'orders' shows order history/activity." } },
       required: ["to"],
       additionalProperties: false,
     },

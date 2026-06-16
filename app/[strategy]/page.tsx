@@ -10,7 +10,7 @@ import { useRegisterVoiceTicket } from "@/contexts/VoiceContext";
 import type { VoiceTicketApi, VoiceTicketState, VoiceResult } from "@/lib/voice/types";
 import { describeTicket, money, spokenSymbol } from "@/lib/voice/format";
 import type { FuturesContract } from "@/contexts/AppContext";
-import { MULTI_EXPIRY_STRATEGIES } from "@/lib/constants";
+import { MULTI_EXPIRY_STRATEGIES, STRIKE_LOCKED_GROUPS } from "@/lib/constants";
 import type { OrderPayload, DryRunResult } from "@/lib/types";
 import { dryRunOrder, submitOrder } from "@/api/placeOrder";
 import { replaceOrder } from "@/api/replaceOrder";
@@ -608,9 +608,18 @@ export default function StrategyPage() {
         list.length > 1 &&
         list.every((l) => l.type === list[0].type);
 
+      // Some strategies lock certain legs to a shared strike (e.g. an iron
+      // butterfly's body, a straddle, a calendar). When a locked leg's strike
+      // changes, move the others in its group to match (snapped to their own exp).
+      const editedIdx = list.findIndex((l) => l.id === legId);
+      const strikeGroup =
+        updates.strike !== undefined
+          ? (STRIKE_LOCKED_GROUPS[strategyName] ?? []).find((g) => g.includes(editedIdx))
+          : undefined;
+
       return {
         ...prev,
-        [strategyKey]: list.map((l) => {
+        [strategyKey]: list.map((l, i) => {
           if (l.id === legId) return { ...l, ...updates };
           let next = { ...l };
           if (syncExpiry) {
@@ -618,6 +627,9 @@ export default function StrategyPage() {
             next = { ...next, expiration: newExp, strike: resolveStrikeOnExpChange(newExp, l.strike, strikesByExpiration) };
           }
           if (syncType) next = { ...next, type: updates.type! };
+          if (strikeGroup?.includes(i)) {
+            next = { ...next, strike: resolveStrikeOnExpChange(next.expiration, updates.strike!, strikesByExpiration) };
+          }
           return next;
         }),
       };
